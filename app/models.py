@@ -34,8 +34,33 @@ class LLMSettings(BaseModel):
         return max(0.0, min(2.0, value))
 
 
+class GitHubSettings(BaseModel):
+    repo_url: str = ""
+    default_branch: str = "main"
+    use_gh_cli: bool = True
+
+
+class ServerSettings(BaseModel):
+    name: str = "production"
+    host: str = ""
+    port: int = 22
+    username: str = ""
+    project_path: str = ""
+    key_path: str = ""
+    auth_note: str = ""
+
+    @field_validator("port")
+    @classmethod
+    def validate_port(cls, value: int) -> int:
+        if value < 1 or value > 65535:
+            raise ValueError("server port must be between 1 and 65535")
+        return value
+
+
 class AppSettings(BaseModel):
     llm: LLMSettings = Field(default_factory=LLMSettings)
+    github: GitHubSettings = Field(default_factory=GitHubSettings)
+    server: ServerSettings = Field(default_factory=ServerSettings)
     default_project_path: str = ""
     font_family: str = "Vazirmatn, Segoe UI, Tahoma, sans-serif"
     terminal_font_family: str = "Cascadia Mono, Consolas, monospace"
