@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import queue
+import re
 import threading
 from pathlib import Path
+
+_ANSI_PATTERN = re.compile(r"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))")
 
 
 class EmbeddedSession:
@@ -30,7 +33,15 @@ class EmbeddedSession:
             if not path.exists() or not path.is_dir():
                 path = Path.cwd()
 
-            self.process = PtyProcess.spawn("powershell.exe -NoLogo", cwd=str(path))
+            startup = (
+                "Remove-Module PSReadLine -ErrorAction SilentlyContinue; "
+                "$PSStyle.OutputRendering='PlainText'; "
+                "function prompt { 'PS ' + (Get-Location) + '> ' }"
+            )
+            self.process = PtyProcess.spawn(
+                f"powershell.exe -NoLogo -NoProfile -NoExit -Command \"{startup}\"",
+                cwd=str(path),
+            )
             self.reader = threading.Thread(target=self._read_loop, daemon=True)
             self.reader.start()
             return {"ok": True, "message_fa": "ترمینال داخلی آماده است.", "cwd": str(path)}
@@ -65,7 +76,13 @@ class EmbeddedSession:
                     break
                 data = self.process.read(4096)
                 if data:
-                    self.output.put(data)
+                    self.output.put(self._clean_output(data))
             except Exception as exc:
                 self.output.put(f"\n[terminal read error] {exc}\n")
                 break
+
+    @staticmethod
+    def _clean_output(data: str) -> str:
+        value = _ANSI_PATTERN.sub("", data)
+        value = value.replace("\x07", "")
+        return value
