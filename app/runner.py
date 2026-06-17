@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .models import CatalogCommand, ExecutionPlan, RunResult
+from .models import CatalogCommand, ExecutionPlan, RunMode, RunResult
 from .security import SecurityEngine
 
 
@@ -37,6 +37,7 @@ class CommandRunner:
             argv=argv,
             risk=command.risk,
             requires_confirmation=decision.requires_confirmation,
+            run_mode=command.run_mode,
             explanation_fa=explanation_fa or decision.message_fa,
             project_path=str(cwd),
         )
@@ -48,6 +49,9 @@ class CommandRunner:
                 command_id=plan.command_id,
                 message_fa="این عملیات نیازمند تأیید کاربر است.",
             )
+
+        if plan.run_mode == RunMode.NEW_WINDOW:
+            return self._open_new_window(plan)
 
         start = time.perf_counter()
         try:
@@ -89,6 +93,46 @@ class CommandRunner:
                 command_id=plan.command_id,
                 message_fa=f"خطای سیستم هنگام اجرا: {exc}",
             )
+
+    def _open_new_window(self, plan: ExecutionPlan) -> RunResult:
+        try:
+            command_line = subprocess.list2cmdline(plan.argv)
+            ps_command = (
+                f"Set-Location -LiteralPath {self._ps_quote(plan.project_path)}; "
+                f"Write-Host 'FaCoderTerminal launched command:' -ForegroundColor Cyan; "
+                f"Write-Host {self._ps_quote(command_line)} -ForegroundColor Yellow; "
+                f"{command_line}; "
+                "Write-Host ''; "
+                "Write-Host 'Press Enter to close this window...' -ForegroundColor DarkGray; "
+                "Read-Host"
+            )
+            subprocess.Popen(
+                [
+                    "powershell.exe",
+                    "-NoExit",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-Command",
+                    ps_command,
+                ],
+                cwd=plan.project_path,
+                creationflags=subprocess.CREATE_NEW_CONSOLE,
+            )
+            return RunResult(
+                ok=True,
+                command_id=plan.command_id,
+                message_fa="دستور در یک پنجره PowerShell واقعی باز شد.",
+            )
+        except OSError as exc:
+            return RunResult(
+                ok=False,
+                command_id=plan.command_id,
+                message_fa=f"باز کردن پنجره اجرای جداگانه ناموفق بود: {exc}",
+            )
+
+    @staticmethod
+    def _ps_quote(value: str) -> str:
+        return "'" + value.replace("'", "''") + "'"
 
     def _safe_cwd(self, project_path: str) -> Path:
         if project_path:
