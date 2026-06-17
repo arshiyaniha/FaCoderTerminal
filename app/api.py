@@ -9,6 +9,7 @@ from .catalog import CatalogError, CommandCatalog
 from .matcher import LocalMatcher
 from .models import AppSettings, HistoryItem
 from .normalizer import normalize_fa
+from .project_sync import ProjectSyncService
 from .pty_session import EmbeddedSession
 from .runner import CommandRenderError, CommandRunner
 from .store import JsonStore
@@ -29,14 +30,16 @@ class AppAPI:
         self.live = EmbeddedSession()
 
     def get_bootstrap(self) -> dict[str, Any]:
-        return {
-            "ok": not bool(self.catalog_error),
-            "catalog_error": self.catalog_error,
-            "settings": self.store.public_settings(self.settings),
-            "commands": self.catalog.public_list() if not self.catalog_error else [],
-            "history": [item.model_dump(mode="json") for item in self.store.load_history()],
-            "project_root": str(self.project_root),
-        }
+        return {"ok": not bool(self.catalog_error), "catalog_error": self.catalog_error, "settings": self.store.public_settings(self.settings), "commands": self.catalog.public_list() if not self.catalog_error else [], "history": [item.model_dump(mode="json") for item in self.store.load_history()], "project_root": str(self.project_root)}
+
+    def sync_health(self) -> dict[str, Any]:
+        return ProjectSyncService(self.settings, self.project_root).health()
+
+    def make_keypair(self) -> dict[str, Any]:
+        return ProjectSyncService(self.settings, self.project_root).generate_keypair()
+
+    def server_run(self, command_text: str) -> dict[str, Any]:
+        return ProjectSyncService(self.settings, self.project_root).server_exec(command_text)
 
     def live_start(self, project_path: str = "") -> dict[str, Any]:
         cwd = project_path or self.settings.default_project_path or str(self.project_root)
