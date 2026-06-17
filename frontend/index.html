@@ -17,55 +17,71 @@
         <button class="tab">FaCoder</button>
         <button class="tab muted">+</button>
       </div>
+      <div class="top-actions">
+        <button id="commandsBtn" class="toolbar-btn">دستورها</button>
+        <button id="settingsBtn" class="toolbar-btn">تنظیمات</button>
+      </div>
       <div class="brand">FaCoderTerminal</div>
     </header>
 
-    <main class="workspace">
-      <section class="side-panel">
-        <div class="panel-card">
-          <h2>دستور فارسی</h2>
-          <textarea id="requestInput" placeholder="مثلاً: وضعیت گیت پروژه را بررسی کن"></textarea>
-          <label class="label">مسیر پروژه</label>
-          <input id="projectPath" dir="ltr" placeholder="E:\\project\\path" />
-          <div class="actions-row">
-            <button id="parseBtn" class="primary">تشخیص</button>
-            <button id="runBtn" class="accent" disabled>اجرا</button>
-          </div>
-        </div>
-
-        <div class="panel-card settings-card">
-          <h2>تنظیمات LLM</h2>
-          <label class="label">Base URL</label>
-          <input id="baseUrl" dir="ltr" placeholder="https://api.example.com/v1" />
-          <label class="label">API Key</label>
-          <input id="apiKey" dir="ltr" type="password" placeholder="sk-..." />
-          <label class="label">Model</label>
-          <input id="modelName" dir="ltr" placeholder="model-name" />
-          <label class="check"><input id="llmEnabled" type="checkbox" /> فعال‌سازی LLM</label>
-          <div class="actions-row">
-            <button id="saveSettingsBtn">ذخیره</button>
-            <button id="testLlmBtn">تست</button>
-          </div>
-        </div>
-
-        <div class="panel-card command-list">
-          <h2>دستورهای شناخته‌شده</h2>
-          <div id="commandsList"></div>
-        </div>
-      </section>
-
+    <main class="workspace terminal-first">
       <section class="terminal-panel" dir="ltr">
         <div class="terminal-toolbar">
           <div class="crumb">PS <span id="cwdLabel">.</span></div>
-          <div id="statusPill" class="status-pill">Ready</div>
+          <div id="statusPill" class="status-pill">Loading</div>
         </div>
+
         <pre id="output" class="terminal-output"></pre>
-        <div class="preview" dir="rtl">
-          <div class="preview-title">پیشنهاد اجرا</div>
-          <div id="planBox" class="plan-box">هنوز دستوری تشخیص داده نشده است.</div>
+
+        <div class="plan-line" dir="rtl">
+          <span class="plan-label">پیشنهاد:</span>
+          <span id="planBox">هنوز دستوری تشخیص داده نشده است.</span>
+        </div>
+
+        <div class="terminal-input-row" dir="rtl">
+          <span class="prompt" dir="ltr">PS &gt;</span>
+          <input id="requestInput" class="terminal-command-input" placeholder="دستور فارسی را اینجا بنویس...  مثال: وضعیت گیت پروژه را بررسی کن" />
+          <button id="parseBtn" class="primary">تشخیص</button>
+          <button id="runBtn" class="accent" disabled>اجرا</button>
         </div>
       </section>
     </main>
+  </div>
+
+  <div id="settingsModal" class="modal hidden" dir="rtl">
+    <div class="modal-card settings-modal-card">
+      <div class="modal-head">
+        <h2>تنظیمات</h2>
+        <button id="closeSettings" class="icon-btn">×</button>
+      </div>
+
+      <label class="label">مسیر پروژه</label>
+      <input id="projectPath" dir="ltr" placeholder="E:\\project\\path" />
+
+      <h3>تنظیمات LLM</h3>
+      <label class="label">Base URL</label>
+      <input id="baseUrl" dir="ltr" placeholder="https://api.example.com/v1" />
+      <label class="label">API Key</label>
+      <input id="apiKey" dir="ltr" type="password" placeholder="sk-..." />
+      <label class="label">Model</label>
+      <input id="modelName" dir="ltr" placeholder="model-name" />
+      <label class="check"><input id="llmEnabled" type="checkbox" /> فعال‌سازی LLM</label>
+
+      <div class="actions-row end">
+        <button id="testLlmBtn">تست اتصال</button>
+        <button id="saveSettingsBtn" class="primary">ذخیره</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="commandsModal" class="modal hidden" dir="rtl">
+    <div class="modal-card commands-modal-card">
+      <div class="modal-head">
+        <h2>دستورهای شناخته‌شده</h2>
+        <button id="closeCommands" class="icon-btn">×</button>
+      </div>
+      <div id="commandsList" class="commands-grid"></div>
+    </div>
   </div>
 
   <div id="confirmModal" class="modal hidden" dir="rtl">
