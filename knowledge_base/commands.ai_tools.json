@@ -1,0 +1,48 @@
+{
+  "version": "0.1.0",
+  "tool": "ai_tools",
+  "commands": [
+    {
+      "id": "codex.project.review",
+      "tool": "codex",
+      "title_fa": "بررسی پروژه با Codex",
+      "description_fa": "از Codex می‌خواهد ساختار پروژه را بررسی کند و گزارش متنی بدهد.",
+      "aliases_fa": ["کد ایکس پروژه رو بررسی کن", "با codex پروژه را تحلیل کن", "کدکس ساختار پروژه را بگو"],
+      "argv_template": ["codex", "Explain this codebase. Identify important files, risks, and next steps. Do not modify files."],
+      "risk": "medium",
+      "requires_confirmation": true,
+      "category": "ai_agent",
+      "platforms": ["windows"],
+      "args": [],
+      "tags": ["codex", "review"]
+    },
+    {
+      "id": "claude.project.security_review",
+      "tool": "claude",
+      "title_fa": "بررسی امنیتی پروژه با Claude",
+      "description_fa": "از Claude Code می‌خواهد پروژه را از نظر ریسک‌های امنیتی بررسی کند، بدون تغییر فایل‌ها.",
+      "aliases_fa": ["کلاود امنیت پروژه را بررسی کن", "با claude چک امنیتی بگیر", "امنیت پروژه با کلاد"],
+      "argv_template": ["claude", "Review this project for security risks. Do not modify files. Return a prioritized Persian report."],
+      "risk": "medium",
+      "requires_confirmation": true,
+      "category": "ai_agent",
+      "platforms": ["windows"],
+      "args": [],
+      "tags": ["claude", "security"]
+    },
+    {
+      "id": "ruflo.mcp.list",
+      "tool": "ruflo",
+      "title_fa": "نمایش ابزارهای MCP",
+      "description_fa": "لیست ابزارهای MCP ثبت‌شده در Claude را نمایش می‌دهد.",
+      "aliases_fa": ["ابزارهای رفلو را نشان بده", "mcp ها را لیست کن", "لیست ابزارهای mcp"],
+      "argv_template": ["claude.cmd", "mcp", "list"],
+      "risk": "safe",
+      "requires_confirmation": false,
+      "category": "mcp",
+      "platforms": ["windows"],
+      "args": [],
+      "tags": ["ruflo", "mcp"]
+    }
+  ]
+}
