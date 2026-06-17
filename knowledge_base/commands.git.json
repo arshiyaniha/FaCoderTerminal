@@ -1,0 +1,62 @@
+{
+  "version": "0.1.0",
+  "tool": "git",
+  "commands": [
+    {
+      "id": "git.status",
+      "tool": "git",
+      "title_fa": "بررسی وضعیت گیت",
+      "description_fa": "وضعیت تغییرات ریپازیتوری فعلی را نمایش می‌دهد.",
+      "aliases_fa": ["وضعیت گیت", "گیت را چک کن", "وضعیت پروژه در گیت", "git status"],
+      "argv_template": ["git", "status", "--short", "--branch"],
+      "risk": "safe",
+      "requires_confirmation": false,
+      "category": "version_control",
+      "platforms": ["windows"],
+      "args": [],
+      "tags": ["git", "status"]
+    },
+    {
+      "id": "git.diff.stat",
+      "tool": "git",
+      "title_fa": "خلاصه تغییرات گیت",
+      "description_fa": "خلاصه آماری تغییرات فایل‌ها را نشان می‌دهد.",
+      "aliases_fa": ["خلاصه تغییرات", "چه فایل‌هایی تغییر کرده", "diff کوتاه", "آمار تغییرات گیت"],
+      "argv_template": ["git", "diff", "--stat"],
+      "risk": "safe",
+      "requires_confirmation": false,
+      "category": "version_control",
+      "platforms": ["windows"],
+      "args": [],
+      "tags": ["git", "diff"]
+    },
+    {
+      "id": "git.log.recent",
+      "tool": "git",
+      "title_fa": "نمایش کامیت‌های اخیر",
+      "description_fa": "آخرین کامیت‌های پروژه را خلاصه نمایش می‌دهد.",
+      "aliases_fa": ["کامیت‌های اخیر", "تاریخچه گیت", "آخرین کامیت‌ها", "git log"],
+      "argv_template": ["git", "log", "--oneline", "-10"],
+      "risk": "safe",
+      "requires_confirmation": false,
+      "category": "version_control",
+      "platforms": ["windows"],
+      "args": [],
+      "tags": ["git", "log"]
+    },
+    {
+      "id": "git.branch.list",
+      "tool": "git",
+      "title_fa": "نمایش برنچ‌ها",
+      "description_fa": "لیست branchهای محلی را نمایش می‌دهد.",
+      "aliases_fa": ["برنچ‌ها رو نشون بده", "لیست شاخه‌های گیت", "git branch"],
+      "argv_template": ["git", "branch", "--list"],
+      "risk": "safe",
+      "requires_confirmation": false,
+      "category": "version_control",
+      "platforms": ["windows"],
+      "args": [],
+      "tags": ["git", "branch"]
+    }
+  ]
+}
