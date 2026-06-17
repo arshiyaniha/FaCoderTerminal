@@ -18,6 +18,7 @@
         <button class="tab muted">+</button>
       </div>
       <div class="top-actions">
+        <button id="syncBtn" class="toolbar-btn">هماهنگی</button>
         <button id="commandsBtn" class="toolbar-btn">دستورها</button>
         <button id="settingsBtn" class="toolbar-btn">تنظیمات</button>
       </div>
@@ -30,17 +31,14 @@
           <div class="crumb">PS <span id="cwdLabel">.</span></div>
           <div id="statusPill" class="status-pill">Loading</div>
         </div>
-
         <pre id="output" class="terminal-output"></pre>
-
         <div class="plan-line" dir="rtl">
           <span class="plan-label">پیشنهاد:</span>
           <span id="planBox">هنوز دستوری تشخیص داده نشده است.</span>
         </div>
-
         <div class="terminal-input-row" dir="rtl">
           <span class="prompt" dir="ltr">PS &gt;</span>
-          <input id="requestInput" class="terminal-command-input" placeholder="دستور فارسی را اینجا بنویس...  مثال: وضعیت گیت پروژه را بررسی کن" />
+          <input id="requestInput" class="terminal-command-input" placeholder="Enter: اجرای مستقیم در PowerShell | Ctrl+Enter: تشخیص فارسی" />
           <button id="parseBtn" class="primary">تشخیص</button>
           <button id="runBtn" class="accent" disabled>اجرا</button>
         </div>
@@ -55,8 +53,28 @@
         <button id="closeSettings" class="icon-btn">×</button>
       </div>
 
-      <label class="label">مسیر پروژه</label>
+      <h3>پروژه لوکال و GitHub</h3>
+      <label class="label">مسیر پروژه لوکال</label>
       <input id="projectPath" dir="ltr" placeholder="E:\\project\\path" />
+      <label class="label">GitHub Repository URL</label>
+      <input id="githubRepoUrl" dir="ltr" placeholder="https://github.com/org/repo.git" />
+      <label class="label">Branch اصلی</label>
+      <input id="githubBranch" dir="ltr" placeholder="main" />
+
+      <h3>سرور</h3>
+      <label class="label">نام پروفایل سرور</label>
+      <input id="serverName" dir="ltr" placeholder="production" />
+      <label class="label">IP / Host</label>
+      <input id="serverHost" dir="ltr" placeholder="103.75.x.x" />
+      <label class="label">Port</label>
+      <input id="serverPort" dir="ltr" placeholder="22" />
+      <label class="label">Username</label>
+      <input id="serverUser" dir="ltr" placeholder="root" />
+      <label class="label">پوشه پروژه روی سرور</label>
+      <input id="serverProjectPath" dir="ltr" placeholder="/var/www/project" />
+      <label class="label">مسیر SSH Key</label>
+      <input id="serverKeyPath" dir="ltr" placeholder="C:\\Users\\nima\\.facoderterminal\\keys\\production_ed25519" />
+      <div class="hint">پسورد سرور داخل فایل ذخیره نمی‌شود. برای کار پایدار از کلید SSH بدون رمز استفاده کن.</div>
 
       <h3>تنظیمات LLM</h3>
       <label class="label">Base URL</label>
@@ -68,9 +86,23 @@
       <label class="check"><input id="llmEnabled" type="checkbox" /> فعال‌سازی LLM</label>
 
       <div class="actions-row end">
-        <button id="testLlmBtn">تست اتصال</button>
+        <button id="makeKeyBtn">ساخت کلید</button>
+        <button id="testLlmBtn">تست LLM</button>
         <button id="saveSettingsBtn" class="primary">ذخیره</button>
       </div>
+    </div>
+  </div>
+
+  <div id="syncModal" class="modal hidden" dir="rtl">
+    <div class="modal-card sync-modal-card">
+      <div class="modal-head">
+        <h2>وضعیت هماهنگی Local / GitHub / Server</h2>
+        <button id="closeSync" class="icon-btn">×</button>
+      </div>
+      <div class="actions-row">
+        <button id="refreshSyncBtn" class="primary">بررسی مجدد</button>
+      </div>
+      <pre id="syncOutput" dir="ltr" class="sync-output"></pre>
     </div>
   </div>
 
