@@ -13,6 +13,11 @@ class RiskLevel(StrEnum):
     BLOCKED = "blocked"
 
 
+class RunMode(StrEnum):
+    CAPTURED = "captured"
+    NEW_WINDOW = "new_window"
+
+
 class LLMSettings(BaseModel):
     provider_type: str = "openai_compatible"
     base_url: str = ""
@@ -55,6 +60,7 @@ class CatalogCommand(BaseModel):
     argv_template: list[str]
     risk: RiskLevel = RiskLevel.SAFE
     requires_confirmation: bool = False
+    run_mode: RunMode = RunMode.CAPTURED
     category: str = "general"
     platforms: list[str] = Field(default_factory=lambda: ["windows"])
     args: list[CommandArg] = Field(default_factory=list)
@@ -85,6 +91,7 @@ class ExecutionPlan(BaseModel):
     argv: list[str]
     risk: RiskLevel
     requires_confirmation: bool
+    run_mode: RunMode
     explanation_fa: str
     project_path: str
 
