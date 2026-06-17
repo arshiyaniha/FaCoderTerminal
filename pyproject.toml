@@ -1,0 +1,21 @@
+[project]
+name = "facoderterminal"
+version = "0.1.0"
+description = "Persian-first controlled command launcher for Windows developer workflows."
+requires-python = ">=3.11"
+dependencies = [
+  "pywebview>=5.0",
+  "pydantic>=2.7",
+  "rapidfuzz>=3.9"
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
