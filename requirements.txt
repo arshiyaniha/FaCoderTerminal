@@ -1,3 +1,4 @@
 pywebview>=5.0
 pydantic>=2.7
 rapidfuzz>=3.9
+pywinpty>=2.0
