@@ -7,7 +7,7 @@ from typing import Any
 from .ai_client import LLMClient, LLMClientError
 from .catalog import CatalogError, CommandCatalog
 from .matcher import LocalMatcher
-from .models import AppSettings, HistoryItem, IntentResult
+from .models import AppSettings, HistoryItem
 from .normalizer import normalize_fa
 from .runner import CommandRenderError, CommandRunner
 from .store import JsonStore
@@ -32,7 +32,7 @@ class AppAPI:
             "catalog_error": self.catalog_error,
             "settings": self.store.public_settings(self.settings),
             "commands": self.catalog.public_list() if not self.catalog_error else [],
-            "history": [item.model_dump() for item in self.store.load_history()],
+            "history": [item.model_dump(mode="json") for item in self.store.load_history()],
             "project_root": str(self.project_root),
         }
 
@@ -40,8 +40,11 @@ class AppAPI:
         current_key = self.settings.llm.api_key
         incoming = payload or {}
         llm_payload = incoming.get("llm", {})
-        if llm_payload.get("api_key", "").startswith("***"):
+        api_key = str(llm_payload.get("api_key", "")).strip()
+        if "********" in api_key:
             llm_payload["api_key"] = current_key
+        else:
+            llm_payload["api_key"] = api_key
         incoming["llm"] = llm_payload
         self.settings = AppSettings.model_validate(incoming)
         self.store.save_settings(self.settings)
@@ -89,8 +92,8 @@ class AppAPI:
 
         return {
             "ok": True,
-            "intent": intent.model_dump(),
-            "plan": plan.model_dump(),
+            "intent": intent.model_dump(mode="json"),
+            "plan": plan.model_dump(mode="json"),
             "command_preview": " ".join(plan.argv),
         }
 
@@ -129,7 +132,11 @@ class AppAPI:
                     output_preview=preview,
                 )
             )
-        return {"ok": result.ok, "plan": plan.model_dump(), "result": result.model_dump()}
+        return {
+            "ok": result.ok,
+            "plan": plan.model_dump(mode="json"),
+            "result": result.model_dump(mode="json"),
+        }
 
     def get_history(self) -> dict[str, Any]:
-        return {"ok": True, "history": [item.model_dump() for item in self.store.load_history()]}
+        return {"ok": True, "history": [item.model_dump(mode="json") for item in self.store.load_history()]}
