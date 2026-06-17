@@ -71,8 +71,8 @@ async function boot() {
       setStatus("Catalog Error", "error");
     } else {
       writeOutput("FaCoderTerminal آماده است.", "ok");
-      writeOutput("دستور فارسی را در خط پایین بنویس و Enter بزن.");
-      writeOutput("برای تنظیم LLM، دکمه تنظیمات بالای صفحه را بزن.");
+      writeOutput("Enter برای تشخیص فارسی؛ هدف نهایی: ترمینال زنده داخلی + لایه هوشمند.");
+      writeOutput("برای تنظیم Local/GitHub/Server دکمه تنظیمات را بزن.");
       setStatus("Ready", "ok");
       $("requestInput").focus();
     }
@@ -89,6 +89,14 @@ function hydrateSettings(settings) {
   $("modelName").value = settings.llm?.model || "";
   $("llmEnabled").checked = Boolean(settings.llm?.enabled);
   $("projectPath").value = settings.default_project_path || "";
+  $("githubRepoUrl").value = settings.github?.repo_url || "";
+  $("githubBranch").value = settings.github?.default_branch || "main";
+  $("serverName").value = settings.server?.name || "production";
+  $("serverHost").value = settings.server?.host || "";
+  $("serverPort").value = settings.server?.port || 22;
+  $("serverUser").value = settings.server?.username || "";
+  $("serverProjectPath").value = settings.server?.project_path || "";
+  $("serverKeyPath").value = settings.server?.key_path || "";
   $("cwdLabel").textContent = settings.default_project_path || ".";
 }
 
@@ -97,6 +105,22 @@ function collectSettings() {
   return {
     ...previous,
     default_project_path: $("projectPath").value.trim(),
+    github: {
+      ...(previous.github || {}),
+      repo_url: $("githubRepoUrl").value.trim(),
+      default_branch: $("githubBranch").value.trim() || "main",
+      use_gh_cli: true,
+    },
+    server: {
+      ...(previous.server || {}),
+      name: $("serverName").value.trim() || "production",
+      host: $("serverHost").value.trim(),
+      port: Number($("serverPort").value.trim() || 22),
+      username: $("serverUser").value.trim(),
+      project_path: $("serverProjectPath").value.trim(),
+      key_path: $("serverKeyPath").value.trim(),
+      auth_note: "password is not stored by MVP",
+    },
     llm: {
       ...(previous.llm || {}),
       provider_type: "openai_compatible",
@@ -151,6 +175,29 @@ async function testLlm() {
   const result = await api.test_llm();
   writeOutput(result.message_fa, result.ok ? "ok" : "error");
   setStatus(result.ok ? "LLM OK" : "LLM Error", result.ok ? "ok" : "error");
+}
+
+async function makeKeypair() {
+  const api = pyApi();
+  if (!api) return;
+  await saveSettings();
+  const result = await api.make_keypair();
+  writeOutput(result.message_fa || JSON.stringify(result), result.ok ? "ok" : "error");
+  if (result.key_path) {
+    $("serverKeyPath").value = result.key_path;
+    writeOutput(`Key: ${result.key_path}`, "ok");
+  }
+}
+
+async function refreshSync() {
+  const api = pyApi();
+  if (!api) return;
+  await saveSettings();
+  showModal("syncModal");
+  $("syncOutput").textContent = "در حال بررسی هماهنگی...";
+  const result = await api.sync_health();
+  $("syncOutput").textContent = JSON.stringify(result, null, 2);
+  writeOutput("وضعیت هماهنگی Local/GitHub/Server بررسی شد.", result.ok ? "ok" : "error");
 }
 
 async function parseRequest() {
@@ -226,10 +273,14 @@ function wireEvents() {
   $("runBtn").addEventListener("click", () => runCurrent(false));
   $("saveSettingsBtn").addEventListener("click", saveSettings);
   $("testLlmBtn").addEventListener("click", testLlm);
+  $("makeKeyBtn").addEventListener("click", makeKeypair);
+  $("refreshSyncBtn").addEventListener("click", refreshSync);
+  $("syncBtn").addEventListener("click", refreshSync);
   $("settingsBtn").addEventListener("click", () => showModal("settingsModal"));
   $("commandsBtn").addEventListener("click", () => showModal("commandsModal"));
   $("closeSettings").addEventListener("click", () => hideModal("settingsModal"));
   $("closeCommands").addEventListener("click", () => hideModal("commandsModal"));
+  $("closeSync").addEventListener("click", () => hideModal("syncModal"));
   $("cancelConfirm").addEventListener("click", () => hideModal("confirmModal"));
   $("acceptConfirm").addEventListener("click", async () => {
     hideModal("confirmModal");
