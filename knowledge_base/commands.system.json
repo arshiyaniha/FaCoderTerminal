@@ -1,0 +1,48 @@
+{
+  "version": "0.1.0",
+  "tool": "system",
+  "commands": [
+    {
+      "id": "system.powershell.version",
+      "tool": "powershell",
+      "title_fa": "نمایش نسخه پاورشل",
+      "description_fa": "نسخه PowerShell نصب‌شده را نمایش می‌دهد.",
+      "aliases_fa": ["نسخه پاورشل", "پاورشل چه نسخه‌ای است", "powershell version"],
+      "argv_template": ["powershell", "-NoProfile", "-Command", "$PSVersionTable.PSVersion.ToString()"],
+      "risk": "safe",
+      "requires_confirmation": false,
+      "category": "system_info",
+      "platforms": ["windows"],
+      "args": [],
+      "tags": ["powershell", "version"]
+    },
+    {
+      "id": "system.python.version",
+      "tool": "python",
+      "title_fa": "نمایش نسخه پایتون",
+      "description_fa": "نسخه Python فعال روی سیستم را نمایش می‌دهد.",
+      "aliases_fa": ["نسخه پایتون", "پایتون چه نسخه‌ای است", "python version"],
+      "argv_template": ["python", "--version"],
+      "risk": "safe",
+      "requires_confirmation": false,
+      "category": "system_info",
+      "platforms": ["windows"],
+      "args": [],
+      "tags": ["python", "version"]
+    },
+    {
+      "id": "system.node.version",
+      "tool": "node",
+      "title_fa": "نمایش نسخه Node.js",
+      "description_fa": "نسخه Node.js نصب‌شده را نمایش می‌دهد.",
+      "aliases_fa": ["نسخه نود", "node version", "نود جی اس چه نسخه‌ای است"],
+      "argv_template": ["node", "--version"],
+      "risk": "safe",
+      "requires_confirmation": false,
+      "category": "system_info",
+      "platforms": ["windows"],
+      "args": [],
+      "tags": ["node", "version"]
+    }
+  ]
+}
