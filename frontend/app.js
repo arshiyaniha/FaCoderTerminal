@@ -3,13 +3,14 @@ const state = {
   commands: [],
   currentPlan: null,
   currentIntent: null,
+  apiReady: false,
 };
 
 const $ = (id) => document.getElementById(id);
 
 function writeOutput(text, mode = "info") {
   const output = $("output");
-  const prefix = mode === "error" ? "[ERROR]" : mode === "ok" ? "[OK]" : "[INFO]";
+  const prefix = mode === "error" ? "[ERROR]" : mode === "ok" ? "[OK]" : mode === "cmd" ? "PS >" : "[INFO]";
   output.textContent += `${prefix} ${text}\n`;
   output.scrollTop = output.scrollHeight;
 }
@@ -30,10 +31,9 @@ function setPlan(plan, preview, intent) {
   }
   $("cwdLabel").textContent = plan.project_path || ".";
   $("planBox").innerHTML = `
-    <strong>${escapeHtml(plan.title_fa)}</strong><br />
-    <span>${escapeHtml(plan.description_fa)}</span><br />
-    <span>ریسک: ${escapeHtml(plan.risk)}</span><br />
-    <code dir="ltr">${escapeHtml(preview)}</code><br />
+    <strong>${escapeHtml(plan.title_fa)}</strong>
+    <span> · ریسک: ${escapeHtml(plan.risk)}</span>
+    <code dir="ltr">${escapeHtml(preview)}</code>
     <span>${escapeHtml(plan.explanation_fa || "")}</span>
   `;
   $("runBtn").disabled = false;
@@ -47,10 +47,21 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
+function pyApi() {
+  return window.pywebview && window.pywebview.api ? window.pywebview.api : null;
+}
+
 async function boot() {
+  const api = pyApi();
+  if (!api) {
+    setStatus("Waiting API", "warn");
+    return;
+  }
+
+  state.apiReady = true;
   setStatus("Loading", "warn");
   try {
-    const data = await window.pywebview.api.get_bootstrap();
+    const data = await api.get_bootstrap();
     state.settings = data.settings;
     state.commands = data.commands || [];
     hydrateSettings(data.settings);
@@ -60,8 +71,10 @@ async function boot() {
       setStatus("Catalog Error", "error");
     } else {
       writeOutput("FaCoderTerminal آماده است.", "ok");
-      writeOutput("یک درخواست فارسی وارد کنید یا یکی از دستورهای شناخته‌شده را انتخاب کنید.");
+      writeOutput("دستور فارسی را در خط پایین بنویس و Enter بزن.");
+      writeOutput("برای تنظیم LLM، دکمه تنظیمات بالای صفحه را بزن.");
       setStatus("Ready", "ok");
+      $("requestInput").focus();
     }
   } catch (error) {
     writeOutput(`خطای شروع برنامه: ${error}`, "error");
@@ -76,6 +89,7 @@ function hydrateSettings(settings) {
   $("modelName").value = settings.llm?.model || "";
   $("llmEnabled").checked = Boolean(settings.llm?.enabled);
   $("projectPath").value = settings.default_project_path || "";
+  $("cwdLabel").textContent = settings.default_project_path || ".";
 }
 
 function collectSettings() {
@@ -107,6 +121,7 @@ function renderCommands(commands) {
     `;
     item.addEventListener("click", async () => {
       $("requestInput").value = command.aliases_fa?.[0] || command.title_fa;
+      hideModal("commandsModal");
       await parseRequest();
     });
     box.appendChild(item);
@@ -114,53 +129,66 @@ function renderCommands(commands) {
 }
 
 async function saveSettings() {
+  const api = pyApi();
+  if (!api) return;
   setStatus("Saving", "warn");
   const payload = collectSettings();
-  const result = await window.pywebview.api.save_settings(payload);
+  const result = await api.save_settings(payload);
   if (result.ok) {
     state.settings = result.settings;
     hydrateSettings(result.settings);
     writeOutput("تنظیمات ذخیره شد.", "ok");
     setStatus("Saved", "ok");
+    hideModal("settingsModal");
   }
 }
 
 async function testLlm() {
+  const api = pyApi();
+  if (!api) return;
   await saveSettings();
   setStatus("Testing LLM", "warn");
-  const result = await window.pywebview.api.test_llm();
+  const result = await api.test_llm();
   writeOutput(result.message_fa, result.ok ? "ok" : "error");
   setStatus(result.ok ? "LLM OK" : "LLM Error", result.ok ? "ok" : "error");
 }
 
 async function parseRequest() {
+  const api = pyApi();
+  if (!api) {
+    writeOutput("API برنامه هنوز آماده نیست.", "error");
+    return;
+  }
+
   const text = $("requestInput").value.trim();
   const projectPath = $("projectPath").value.trim();
   if (!text) {
-    writeOutput("درخواست فارسی خالی است.", "error");
+    writeOutput("دستور خالی است.", "error");
     return;
   }
+  writeOutput(text, "cmd");
   setStatus("Parsing", "warn");
   setPlan(null);
-  const result = await window.pywebview.api.parse_request(text, projectPath);
+  const result = await api.parse_request(text, projectPath);
   if (!result.ok) {
     writeOutput(result.message_fa || "تشخیص درخواست ناموفق بود.", "error");
     setStatus("Parse Error", "error");
     return;
   }
   setPlan(result.plan, result.command_preview, result.intent);
-  writeOutput(`تشخیص داده شد: ${result.plan.command_id} (${result.intent.source})`, "ok");
+  writeOutput(`تشخیص: ${result.plan.command_id} (${result.intent.source})`, "ok");
   setStatus("Parsed", "ok");
 }
 
 async function runCurrent(confirmed = false) {
-  if (!state.currentPlan) return;
+  const api = pyApi();
+  if (!api || !state.currentPlan) return;
   if (state.currentPlan.requires_confirmation && !confirmed) {
     showConfirm();
     return;
   }
   setStatus("Running", "warn");
-  const result = await window.pywebview.api.run_command(
+  const result = await api.run_command(
     state.currentPlan.command_id,
     state.currentIntent?.args || {},
     $("projectPath").value.trim(),
@@ -182,27 +210,48 @@ async function runCurrent(confirmed = false) {
 function showConfirm() {
   $("confirmText").textContent = state.currentPlan.explanation_fa || "این عملیات نیازمند تأیید است.";
   $("confirmCommand").textContent = state.currentPlan.argv.join(" ");
-  $("confirmModal").classList.remove("hidden");
+  showModal("confirmModal");
 }
 
-function hideConfirm() {
-  $("confirmModal").classList.add("hidden");
+function showModal(id) {
+  $(id).classList.remove("hidden");
 }
 
-window.addEventListener("DOMContentLoaded", () => {
+function hideModal(id) {
+  $(id).classList.add("hidden");
+}
+
+function wireEvents() {
   $("parseBtn").addEventListener("click", parseRequest);
   $("runBtn").addEventListener("click", () => runCurrent(false));
   $("saveSettingsBtn").addEventListener("click", saveSettings);
   $("testLlmBtn").addEventListener("click", testLlm);
-  $("cancelConfirm").addEventListener("click", hideConfirm);
+  $("settingsBtn").addEventListener("click", () => showModal("settingsModal"));
+  $("commandsBtn").addEventListener("click", () => showModal("commandsModal"));
+  $("closeSettings").addEventListener("click", () => hideModal("settingsModal"));
+  $("closeCommands").addEventListener("click", () => hideModal("commandsModal"));
+  $("cancelConfirm").addEventListener("click", () => hideModal("confirmModal"));
   $("acceptConfirm").addEventListener("click", async () => {
-    hideConfirm();
+    hideModal("confirmModal");
     await runCurrent(true);
   });
   $("requestInput").addEventListener("keydown", async (event) => {
-    if (event.ctrlKey && event.key === "Enter") {
-      await parseRequest();
+    if (event.key === "Enter") {
+      event.preventDefault();
+      if (event.ctrlKey) {
+        await runCurrent(false);
+      } else {
+        await parseRequest();
+      }
     }
   });
-  boot();
+}
+
+window.addEventListener("DOMContentLoaded", () => {
+  wireEvents();
+  setStatus("Waiting API", "warn");
+  writeOutput("در حال آماده‌سازی رابط برنامه...");
+  if (pyApi()) boot();
 });
+
+window.addEventListener("pywebviewready", boot);
