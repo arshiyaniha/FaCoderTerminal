@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 import queue
-import re
 import threading
 from pathlib import Path
-
-_ANSI_PATTERN = re.compile(r"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))")
 
 
 class EmbeddedSession:
@@ -33,15 +30,7 @@ class EmbeddedSession:
             if not path.exists() or not path.is_dir():
                 path = Path.cwd()
 
-            startup = (
-                "Remove-Module PSReadLine -ErrorAction SilentlyContinue; "
-                "$PSStyle.OutputRendering='PlainText'; "
-                "function prompt { 'PS ' + (Get-Location) + '> ' }"
-            )
-            self.process = PtyProcess.spawn(
-                f"powershell.exe -NoLogo -NoProfile -NoExit -Command \"{startup}\"",
-                cwd=str(path),
-            )
+            self.process = PtyProcess.spawn("powershell.exe -NoLogo", cwd=str(path))
             self.reader = threading.Thread(target=self._read_loop, daemon=True)
             self.reader.start()
             return {"ok": True, "message_fa": "ترمینال داخلی آماده است.", "cwd": str(path)}
@@ -52,6 +41,16 @@ class EmbeddedSession:
                 return {"ok": False, "message_fa": "ترمینال داخلی فعال نیست."}
             self.process.write(text)
             return {"ok": True}
+
+    def resize(self, cols: int, rows: int) -> dict[str, object]:
+        with self.lock:
+            if self.process is None or not self.process.isalive():
+                return {"ok": False, "message_fa": "ترمینال داخلی فعال نیست."}
+            try:
+                self.process.setwinsize(rows, cols)
+                return {"ok": True}
+            except Exception as exc:
+                return {"ok": False, "message_fa": str(exc)}
 
     def read(self) -> dict[str, object]:
         chunks: list[str] = []
@@ -76,13 +75,7 @@ class EmbeddedSession:
                     break
                 data = self.process.read(4096)
                 if data:
-                    self.output.put(self._clean_output(data))
+                    self.output.put(data)
             except Exception as exc:
-                self.output.put(f"\n[terminal read error] {exc}\n")
+                self.output.put(f"\r\n[terminal read error] {exc}\r\n")
                 break
-
-    @staticmethod
-    def _clean_output(data: str) -> str:
-        value = _ANSI_PATTERN.sub("", data)
-        value = value.replace("\x07", "")
-        return value
