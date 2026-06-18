@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import urllib.error
 import urllib.request
 from typing import Any
@@ -33,18 +34,9 @@ class LLMClient:
         try:
             raw = self.chat_completion("سلام! فقط یک کلمه جواب بده.", max_tokens=40)
             preview = raw.get("choices", [{}])[0].get("message", {}).get("content", "")
-            return {
-                "ok": True,
-                "message_fa": "اتصال به مدل برقرار شد.",
-                "endpoint": self.endpoint(),
-                "response_preview": preview,
-            }
+            return {"ok": True, "message_fa": "اتصال به مدل برقرار شد.", "endpoint": self.endpoint(), "response_preview": preview}
         except Exception as exc:
-            return {
-                "ok": False,
-                "message_fa": f"اتصال به مدل ناموفق بود: {exc}",
-                "endpoint": self.endpoint() if self.settings.base_url else "",
-            }
+            return {"ok": False, "message_fa": f"اتصال به مدل ناموفق بود: {exc}", "endpoint": self.endpoint() if self.settings.base_url else ""}
 
     def chat_completion(self, prompt: str, max_tokens: int | None = None) -> dict[str, Any]:
         payload = {
@@ -60,10 +52,11 @@ class LLMClient:
             raise LLMClientError("تنظیمات مدل کامل نیست.")
 
         system_prompt = (
-            "You are an intent parser for a Persian developer command app. "
-            "Return only valid JSON. Choose only one command_id from the provided candidates. "
-            "Never invent command_id. Never write shell commands. "
-            "If unclear, set needs_clarification=true and use command_id='unknown.none'."
+            "You are a strict JSON intent parser for a Persian developer command app. "
+            "Return exactly one JSON object and nothing else. "
+            "Choose command_id only from candidate_commands. Never invent command_id. "
+            "Never write shell commands. If unclear, use command_id='unknown.none' and needs_clarification=true. "
+            "No markdown. No explanation outside JSON."
         )
         user_prompt = {
             "user_text": user_text,
@@ -75,6 +68,14 @@ class LLMClient:
                 "confidence": "number 0..1",
                 "explanation_fa": "short Persian explanation",
                 "needs_clarification": "boolean",
+            },
+            "example_valid_output": {
+                "type": "command_intent",
+                "command_id": "git.status",
+                "args": {},
+                "confidence": 0.91,
+                "explanation_fa": "درخواست شما به بررسی وضعیت گیت مربوط است.",
+                "needs_clarification": False,
             },
         }
         payload = {
@@ -89,21 +90,62 @@ class LLMClient:
 
         data = self._post(payload)
         try:
-            content = data["choices"][0]["message"]["content"]
-            parsed = json.loads(content)
+            content = data["choices"][0]["message"].get("content", "")
+            parsed = self._parse_json_object(content)
             parsed["source"] = "llm"
             return IntentResult.model_validate(parsed)
-        except (KeyError, json.JSONDecodeError, ValidationError, TypeError) as exc:
-            raise LLMClientError("پاسخ مدل ساختار JSON معتبر نداشت.") from exc
+        except (KeyError, ValidationError, TypeError, ValueError) as exc:
+            preview = ""
+            try:
+                preview = str(data.get("choices", [{}])[0].get("message", {}).get("content", ""))[:300]
+            except Exception:
+                preview = ""
+            raise LLMClientError(f"پاسخ مدل به JSON قابل اجرا تبدیل نشد. پیش‌نمایش پاسخ: {preview}") from exc
+
+    @staticmethod
+    def _parse_json_object(content: str) -> dict[str, Any]:
+        text = (content or "").strip()
+        text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE).strip()
+
+        fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.DOTALL | re.IGNORECASE)
+        if fenced:
+            return json.loads(fenced.group(1))
+
+        if text.startswith("{") and text.endswith("}"):
+            return json.loads(text)
+
+        start = text.find("{")
+        if start == -1:
+            raise ValueError("no json object found")
+
+        depth = 0
+        in_string = False
+        escape = False
+        for index in range(start, len(text)):
+            char = text[index]
+            if in_string:
+                if escape:
+                    escape = False
+                elif char == "\\":
+                    escape = True
+                elif char == '"':
+                    in_string = False
+                continue
+            if char == '"':
+                in_string = True
+            elif char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    return json.loads(text[start : index + 1])
+        raise ValueError("json object not closed")
 
     def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
         req = urllib.request.Request(
             self.endpoint(),
             data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.settings.api_key}",
-            },
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {self.settings.api_key}"},
             method="POST",
         )
         try:
