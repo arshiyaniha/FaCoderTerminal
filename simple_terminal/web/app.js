@@ -99,36 +99,99 @@ async function readLoop() {
   } catch (_) {}
 }
 
-function getText() {
-  if (!state.term?.buffer?.active) return "";
+function getLines() {
+  if (!state.term?.buffer?.active) return [];
   const buffer = state.term.buffer.active;
   const lines = [];
   for (let i = 0; i < buffer.length; i += 1) {
     const line = buffer.getLine(i);
-    if (line) lines.push(line.translateToString(true));
+    if (line) lines.push(line.translateToString(true).trimEnd());
   }
-  return lines.join("\n").trimEnd();
+  return lines;
+}
+
+function getText() {
+  return getLines().join("\n").trimEnd();
+}
+
+function getLastLines(count) {
+  return getLines().slice(-count).join("\n").trimEnd();
+}
+
+function isPromptLine(line) {
+  return /^PS\s+.+>\s*/.test(String(line || ""));
+}
+
+function promptCommand(line) {
+  const match = String(line || "").match(/^PS\s+.+?>\s*(.*)$/);
+  return match ? match[1].trim() : "";
+}
+
+function getLastCommandResults(count = 3) {
+  const lines = getLines();
+  const blocks = [];
+  let current = null;
+
+  for (const line of lines) {
+    if (isPromptLine(line)) {
+      const command = promptCommand(line);
+      if (current) blocks.push(current);
+      current = command ? [line] : null;
+      continue;
+    }
+    if (current) current.push(line);
+  }
+  if (current) blocks.push(current);
+
+  const meaningful = blocks
+    .map((block) => block.join("\n").trimEnd())
+    .filter((block) => block.trim());
+
+  return meaningful.slice(-count).join("\n\n").trimEnd();
+}
+
+async function copyText(text, label) {
+  const value = String(text || "").trimEnd();
+  if (!value.trim()) {
+    setStatus("Nothing to copy");
+    setTimeout(() => setStatus("Ready"), 900);
+    if (state.term) state.term.focus();
+    return;
+  }
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+    } else {
+      const textarea = document.createElement("textarea");
+      textarea.value = value;
+      textarea.setAttribute("readonly", "readonly");
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+    }
+    setStatus(label || "Copied");
+  } catch (_) {
+    setStatus("Copy failed");
+  } finally {
+    setTimeout(() => setStatus("Ready"), 900);
+    if (state.term) state.term.focus();
+  }
 }
 
 async function copyAll() {
-  const text = getText();
-  if (!text) return;
-  try {
-    await navigator.clipboard.writeText(text);
-    setStatus("Copied");
-    setTimeout(() => setStatus("Ready"), 900);
-  } catch (_) {
-    const textarea = document.createElement("textarea");
-    textarea.value = text;
-    document.body.appendChild(textarea);
-    textarea.select();
-    document.execCommand("copy");
-    document.body.removeChild(textarea);
-    setStatus("Copied");
-    setTimeout(() => setStatus("Ready"), 900);
-  } finally {
-    state.term.focus();
-  }
+  await copyText(getText(), "Copied all");
+}
+
+async function copyLast50() {
+  await copyText(getLastLines(50), "Copied 50 lines");
+}
+
+async function copyLast3Commands() {
+  await copyText(getLastCommandResults(3), "Copied 3 commands");
 }
 
 async function restart() {
@@ -140,7 +203,9 @@ async function restart() {
 }
 
 function wire() {
-  $("copyBtn").addEventListener("click", copyAll);
+  $("copyAllBtn").addEventListener("click", copyAll);
+  $("copyLast50Btn").addEventListener("click", copyLast50);
+  $("copyLast3Btn").addEventListener("click", copyLast3Commands);
   $("restartBtn").addEventListener("click", restart);
 }
 
