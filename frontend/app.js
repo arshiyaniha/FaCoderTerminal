@@ -54,6 +54,17 @@ function escapeHtml(value) {
   return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 }
 
+function quotePowerShellArg(arg) {
+  const value = String(arg ?? "");
+  if (value === "") return "''";
+  if (/^[A-Za-z0-9_@%+=:,./\\-]+$/.test(value)) return value;
+  return "'" + value.replaceAll("'", "''") + "'";
+}
+
+function argvToPowerShell(argv) {
+  return (argv || []).map(quotePowerShellArg).join(" ");
+}
+
 function pyApi() {
   return window.pywebview && window.pywebview.api ? window.pywebview.api : null;
 }
@@ -302,7 +313,7 @@ async function runCurrent(confirmed = false) {
     showConfirm();
     return;
   }
-  const commandLine = state.currentPlan.argv.join(" ");
+  const commandLine = argvToPowerShell(state.currentPlan.argv);
   await sendToLive(commandLine + "\r");
   setUiMessage(`به ترمینال ارسال شد: ${commandLine}`, "ok");
   $("requestInput").value = "";
@@ -375,7 +386,7 @@ async function copyTerminal(scope) {
 
 function showConfirm() {
   $("confirmText").textContent = state.currentPlan.explanation_fa || "این عملیات نیازمند تأیید است.";
-  $("confirmCommand").textContent = state.currentPlan.argv.join(" ");
+  $("confirmCommand").textContent = argvToPowerShell(state.currentPlan.argv);
   showModal("confirmModal");
 }
 function showModal(id) { $(id).classList.remove("hidden"); }
