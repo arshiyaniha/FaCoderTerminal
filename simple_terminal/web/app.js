@@ -19,6 +19,10 @@ function write(text) {
   if (state.term) state.term.write(String(text || ""));
 }
 
+function quotePowerShellLiteral(value) {
+  return "'" + String(value || "").replaceAll("'", "''") + "'";
+}
+
 function initTerminal() {
   if (typeof Terminal === "undefined") {
     $("terminal").textContent = "xterm.js لود نشد. اینترنت/CDN را بررسی کن.";
@@ -97,6 +101,23 @@ async function readLoop() {
     const result = await backend.read();
     if (result.ok && result.output) write(result.output);
   } catch (_) {}
+}
+
+async function openFolder() {
+  const backend = api();
+  if (!backend || !state.ready) return;
+  setStatus("Select folder");
+  const result = await backend.select_folder();
+  if (!result.ok || !result.path) {
+    setStatus(result.cancelled ? "Ready" : "Folder error");
+    if (state.term) state.term.focus();
+    return;
+  }
+  const command = `Set-Location -LiteralPath ${quotePowerShellLiteral(result.path)}`;
+  await backend.write(command + "\r");
+  setStatus("Folder opened");
+  setTimeout(() => setStatus("Ready"), 900);
+  if (state.term) state.term.focus();
 }
 
 function getLines() {
@@ -203,6 +224,7 @@ async function restart() {
 }
 
 function wire() {
+  $("openFolderBtn").addEventListener("click", openFolder);
   $("copyAllBtn").addEventListener("click", copyAll);
   $("copyLast50Btn").addEventListener("click", copyLast50);
   $("copyLast3Btn").addEventListener("click", copyLast3Commands);
