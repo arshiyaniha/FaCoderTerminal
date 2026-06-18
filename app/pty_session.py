@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import queue
+import shutil
 import threading
 from pathlib import Path
 
@@ -30,10 +31,16 @@ class EmbeddedSession:
             if not path.exists() or not path.is_dir():
                 path = Path.cwd()
 
-            self.process = PtyProcess.spawn("powershell.exe -NoLogo", cwd=str(path))
+            shell_command = self._build_shell_command()
+            self.process = PtyProcess.spawn(shell_command, cwd=str(path))
             self.reader = threading.Thread(target=self._read_loop, daemon=True)
             self.reader.start()
-            return {"ok": True, "message_fa": "ترمینال داخلی آماده است.", "cwd": str(path)}
+            return {
+                "ok": True,
+                "message_fa": "ترمینال داخلی آماده است.",
+                "cwd": str(path),
+                "shell": shell_command,
+            }
 
     def write(self, text: str) -> dict[str, object]:
         with self.lock:
@@ -79,3 +86,17 @@ class EmbeddedSession:
             except Exception as exc:
                 self.output.put(f"\r\n[terminal read error] {exc}\r\n")
                 break
+
+    @staticmethod
+    def _build_shell_command() -> str:
+        startup = (
+            "chcp 65001 > $null; "
+            "[Console]::InputEncoding = [System.Text.UTF8Encoding]::new(); "
+            "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); "
+            "$OutputEncoding = [Console]::OutputEncoding; "
+            "$PSStyle.OutputRendering = 'Ansi'; "
+        )
+        startup_escaped = startup.replace('"', '`"')
+        if shutil.which("pwsh.exe"):
+            return f"pwsh.exe -NoLogo -NoProfile -NoExit -Command \"{startup_escaped}\""
+        return f"powershell.exe -NoLogo -NoProfile -NoExit -Command \"{startup_escaped}\""
