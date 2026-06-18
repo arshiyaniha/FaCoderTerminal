@@ -83,11 +83,11 @@ class SimplePtySession:
 
             diagnostics.append(f"[OK] Selected shell kind: {self.shell_kind}")
             diagnostics.append(f"[OK] Selected shell command: {self.active_command}")
+            diagnostics.append("[INFO] No startup script is injected from Python. Smart cd is handled in the frontend before commands are sent.")
             self.output.put(self._format_diagnostics(diagnostics) + "\r\n")
 
             self.reader = threading.Thread(target=self._read_loop, daemon=True)
             self.reader.start()
-            self._inject_startup_script()
             return {
                 "ok": True,
                 "cwd": str(path),
@@ -156,19 +156,6 @@ class SimplePtySession:
                     "[DIAG] If this happens after a shell prompt appeared, the child shell exited or crashed.\r\n"
                 )
                 break
-
-    def _inject_startup_script(self) -> None:
-        if self.process is None or not self.process.isalive():
-            self.output.put("\r\n[DIAG] Startup script not injected because shell is not alive.\r\n")
-            return
-        try:
-            if self.shell_kind == "powershell":
-                self.output.put("\r\n[INFO] Injecting PowerShell UTF-8 and smart cd startup script...\r\n")
-                self.process.write(self._powershell_startup_script() + "\r")
-            elif self.shell_kind == "cmd":
-                self.output.put("\r\n[INFO] CMD fallback is active. PowerShell-specific smart cd is not available.\r\n")
-        except Exception as exc:
-            self.output.put(f"\r\n[DIAG] Startup script injection failed: {exc!r}\r\n")
 
     def _safe_isalive(self) -> str:
         try:
@@ -250,20 +237,6 @@ class SimplePtySession:
     @staticmethod
     def _format_diagnostics(lines: list[str]) -> str:
         return "\r\n".join(lines) + "\r\n==========================================================="
-
-    @staticmethod
-    def _powershell_startup_script() -> str:
-        return r"""
-chcp.com 65001 | Out-Null
-try { [Console]::InputEncoding = [System.Text.UTF8Encoding]::new() } catch {}
-try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new() } catch {}
-try { $OutputEncoding = [Console]::OutputEncoding } catch {}
-foreach ($name in @('cd','chdir','sl')) { try { Remove-Item "Alias:$name" -Force -ErrorAction SilentlyContinue } catch {} }
-function global:cd { param([Parameter(ValueFromRemainingArguments=$true)][string[]]$PathParts) if(-not $PathParts){ Microsoft.PowerShell.Management\Set-Location -Path $HOME; return }; $target=($PathParts -join ' ').Trim().Trim('"').Trim("'"); if($target -match '^file:///'){ try{ $target=([System.Uri]$target).LocalPath }catch{} }; $target=[Environment]::ExpandEnvironmentVariables($target); Microsoft.PowerShell.Management\Set-Location -LiteralPath $target }
-function global:chdir { param([Parameter(ValueFromRemainingArguments=$true)][string[]]$PathParts) cd @PathParts }
-function global:sl { param([Parameter(ValueFromRemainingArguments=$true)][string[]]$PathParts) cd @PathParts }
-Write-Host '[OK] UTF-8 and smart cd are active.'
-""".strip()
 
     @classmethod
     def _candidate_shell_commands(cls) -> list[dict[str, str]]:
