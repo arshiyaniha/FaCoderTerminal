@@ -41,7 +41,7 @@ function setPlan(plan, preview, intent) {
   state.currentPlan = plan;
   state.currentIntent = intent;
   if (!plan) {
-    setUiMessage("Ctrl+Enter برای تشخیص فارسی؛ تایپ مستقیم داخل ترمینال برای اجرای PowerShell.");
+    setUiMessage("Enter برای اجرا هوشمند؛ Ctrl+Enter فقط تشخیص؛ تایپ مستقیم داخل ترمینال برای PowerShell.");
     $("runBtn").disabled = true;
     return;
   }
@@ -156,7 +156,7 @@ async function boot() {
     }
     await startLive();
     setPlan(null);
-    setUiMessage("ترمینال زنده آماده است. پیام‌های برنامه دیگر داخل ترمینال نوشته نمی‌شوند.", "ok");
+    setUiMessage("ترمینال زنده آماده است. Enter در نوار FaCoder یعنی تشخیص و اجرای خودکار.", "ok");
     setStatus("Ready", "ok");
     state.term.focus();
   } catch (error) {
@@ -233,7 +233,7 @@ function renderCommands(commands) {
     item.addEventListener("click", async () => {
       $("requestInput").value = command.aliases_fa?.[0] || command.title_fa;
       hideModal("commandsModal");
-      await parseRequest();
+      await smartRunRequest();
     });
     box.appendChild(item);
   });
@@ -283,22 +283,28 @@ async function refreshSync() {
   setUiMessage("هماهنگی Local/GitHub/Server بررسی شد.", result.ok ? "ok" : "error");
 }
 
-async function parseRequest() {
+async function parseRequest(options = {}) {
   const api = pyApi();
-  if (!api) return;
+  if (!api) return null;
   const text = $("requestInput").value.trim();
-  if (!text) return;
+  if (!text) return null;
   setUiMessage(text, "cmd");
-  setStatus("Parsing", "warn");
+  setStatus(options.autoRun ? "Smart Run" : "Parsing", "warn");
   setPlan(null);
   const result = await api.parse_request(text, $("projectPath").value.trim());
   if (!result.ok) {
     setUiMessage(result.message_fa || "تشخیص ناموفق بود.", "error");
     setStatus("Parse Error", "error");
-    return;
+    return null;
   }
   setPlan(result.plan, result.command_preview, result.intent);
   setStatus("Parsed", "ok");
+  if (options.autoRun) await runCurrent(false);
+  return result;
+}
+
+async function smartRunRequest() {
+  await parseRequest({ autoRun: true });
 }
 
 async function sendToLive(text) {
@@ -393,7 +399,7 @@ function showModal(id) { $(id).classList.remove("hidden"); }
 function hideModal(id) { $(id).classList.add("hidden"); if (state.term) state.term.focus(); }
 
 function wireEvents() {
-  $("parseBtn").addEventListener("click", parseRequest);
+  $("parseBtn").addEventListener("click", smartRunRequest);
   $("runBtn").addEventListener("click", () => runCurrent(false));
   $("saveSettingsBtn").addEventListener("click", saveSettings);
   $("testLlmBtn").addEventListener("click", testLlm);
@@ -413,7 +419,8 @@ function wireEvents() {
   $("requestInput").addEventListener("keydown", async (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
-      await parseRequest();
+      if (event.ctrlKey) await parseRequest({ autoRun: false });
+      else await smartRunRequest();
     }
   });
 }
