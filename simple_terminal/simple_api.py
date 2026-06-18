@@ -25,3 +25,19 @@ class SimpleTerminalAPI:
 
     def stop(self) -> dict[str, Any]:
         return self.session.stop()
+
+    def select_folder(self) -> dict[str, Any]:
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes("-topmost", True)
+            folder = filedialog.askdirectory(title="Select folder")
+            root.destroy()
+            if not folder:
+                return {"ok": False, "cancelled": True, "path": ""}
+            return {"ok": True, "path": folder}
+        except Exception as exc:
+            return {"ok": False, "message": str(exc), "path": ""}
