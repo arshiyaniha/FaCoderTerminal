@@ -88,12 +88,53 @@ class SimplePtySession:
     def _build_shell_command() -> str:
         # PowerShell's -EncodedCommand expects UTF-16LE.
         # This startup script keeps input/output on UTF-8 so Persian text renders correctly.
-        startup = """
+        # It also replaces cd/chdir/sl with a tolerant version that accepts unquoted paths
+        # copied from Explorer, including Persian paths and paths containing spaces.
+        startup = r"""
 try { chcp.com 65001 | Out-Null } catch {}
 try { [Console]::InputEncoding = [System.Text.UTF8Encoding]::new() } catch {}
 try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new() } catch {}
 try { $OutputEncoding = [Console]::OutputEncoding } catch {}
 try { $PSStyle.OutputRendering = 'Ansi' } catch {}
+
+foreach ($name in @('cd', 'chdir', 'sl')) {
+    try { Remove-Item "Alias:$name" -Force -ErrorAction SilentlyContinue } catch {}
+}
+
+function global:cd {
+    [CmdletBinding()]
+    param(
+        [Parameter(ValueFromRemainingArguments = $true)]
+        [string[]] $PathParts
+    )
+
+    if (-not $PathParts -or $PathParts.Count -eq 0) {
+        Microsoft.PowerShell.Management\Set-Location -Path $HOME
+        return
+    }
+
+    $target = ($PathParts -join ' ').Trim()
+    $target = $target.Trim('"').Trim("'")
+
+    if ($target -match '^file:///') {
+        try { $target = ([System.Uri] $target).LocalPath } catch {}
+    }
+
+    $target = [Environment]::ExpandEnvironmentVariables($target)
+    Microsoft.PowerShell.Management\Set-Location -LiteralPath $target
+}
+
+function global:chdir {
+    [CmdletBinding()]
+    param([Parameter(ValueFromRemainingArguments = $true)][string[]] $PathParts)
+    cd @PathParts
+}
+
+function global:sl {
+    [CmdletBinding()]
+    param([Parameter(ValueFromRemainingArguments = $true)][string[]] $PathParts)
+    cd @PathParts
+}
 """.strip()
         encoded = base64.b64encode(startup.encode("utf-16le")).decode("ascii")
         if shutil.which("pwsh.exe"):
