@@ -6,22 +6,19 @@ const state = {
   apiReady: false,
   liveReady: false,
   poller: null,
+  term: null,
+  fitAddon: null,
 };
 
 const $ = (id) => document.getElementById(id);
 
-function writeOutput(text, mode = "info") {
-  const output = $("output");
-  const prefix = mode === "error" ? "[ERROR]" : mode === "ok" ? "[OK]" : mode === "cmd" ? "PS >" : "[INFO]";
-  output.textContent += `${prefix} ${text}\n`;
-  output.scrollTop = output.scrollHeight;
+function terminalWrite(text) {
+  if (state.term) state.term.write(String(text ?? ""));
 }
 
-function appendRaw(text) {
-  if (!text) return;
-  const output = $("output");
-  output.textContent += text;
-  output.scrollTop = output.scrollHeight;
+function terminalLine(text, mode = "info") {
+  const prefix = mode === "error" ? "[ERROR]" : mode === "ok" ? "[OK]" : mode === "cmd" ? "[FaCoder]" : "[INFO]";
+  terminalWrite(`\r\n${prefix} ${text}\r\n`);
 }
 
 function setStatus(text, type = "") {
@@ -34,7 +31,7 @@ function setPlan(plan, preview, intent) {
   state.currentPlan = plan;
   state.currentIntent = intent;
   if (!plan) {
-    $("planBox").textContent = "Enter: ارسال مستقیم به PowerShell | Ctrl+Enter: تشخیص فارسی";
+    $("planBox").textContent = "Ctrl+Enter برای تشخیص فارسی؛ Enter داخل ترمینال برای اجرای مستقیم.";
     $("runBtn").disabled = true;
     return;
   }
@@ -51,12 +48,58 @@ function pyApi() {
   return window.pywebview && window.pywebview.api ? window.pywebview.api : null;
 }
 
+function initTerminal() {
+  if (state.term || typeof Terminal === "undefined") return;
+  state.term = new Terminal({
+    cursorBlink: true,
+    convertEol: false,
+    fontFamily: "Cascadia Mono, Consolas, monospace",
+    fontSize: 13,
+    theme: {
+      background: "#0c0c0c",
+      foreground: "#e6e6e6",
+      cursor: "#ffffff",
+      selectionBackground: "#264f78",
+      black: "#000000",
+      red: "#cd3131",
+      green: "#0dbc79",
+      yellow: "#e5e510",
+      blue: "#2472c8",
+      magenta: "#bc3fbc",
+      cyan: "#11a8cd",
+      white: "#e5e5e5",
+    },
+    scrollback: 5000,
+  });
+  if (window.FitAddon) {
+    state.fitAddon = new FitAddon.FitAddon();
+    state.term.loadAddon(state.fitAddon);
+  }
+  state.term.open($("terminal"));
+  fitTerminal();
+  state.term.onData(async (data) => {
+    const api = pyApi();
+    if (api && state.liveReady) await api.live_send(data);
+  });
+  window.addEventListener("resize", fitTerminal);
+}
+
+async function fitTerminal() {
+  if (!state.term) return;
+  try {
+    if (state.fitAddon) state.fitAddon.fit();
+    const api = pyApi();
+    if (api && state.term.cols && state.term.rows) await api.live_resize(state.term.cols, state.term.rows);
+  } catch (_) {}
+}
+
 async function boot() {
   const api = pyApi();
   if (!api) {
     setStatus("Waiting API", "warn");
     return;
   }
+  initTerminal();
   state.apiReady = true;
   setStatus("Loading", "warn");
   try {
@@ -66,19 +109,19 @@ async function boot() {
     hydrateSettings(data.settings);
     renderCommands(state.commands);
     if (!data.ok) {
-      writeOutput(data.catalog_error || "خطای catalog", "error");
+      terminalLine(data.catalog_error || "خطای catalog", "error");
       setStatus("Catalog Error", "error");
       return;
     }
     await startLive();
     setPlan(null);
-    writeOutput("FaCoderTerminal آماده است.", "ok");
-    writeOutput("Enter دستور را مستقیم داخل PowerShell داخلی اجرا می‌کند.");
-    writeOutput("Ctrl+Enter دستور فارسی را با FaCoder تحلیل می‌کند.");
+    terminalLine("FaCoderTerminal آماده است.", "ok");
+    terminalLine("این پنجره اکنون xterm.js + PowerShell زنده است.");
+    terminalLine("در خود ترمینال تایپ کن؛ نوار پایین فقط برای دستور فارسی FaCoder است.");
     setStatus("Ready", "ok");
-    $("requestInput").focus();
+    state.term.focus();
   } catch (error) {
-    writeOutput(`خطای شروع برنامه: ${error}`, "error");
+    terminalLine(`خطای شروع برنامه: ${error}`, "error");
     setStatus("Boot Error", "error");
   }
 }
@@ -87,15 +130,16 @@ async function startLive() {
   const api = pyApi();
   const result = await api.live_start($("projectPath").value.trim());
   if (!result.ok) {
-    writeOutput(result.message_fa || "راه‌اندازی PowerShell داخلی ناموفق بود.", "error");
-    if (result.technical) writeOutput(result.technical, "error");
+    terminalLine(result.message_fa || "راه‌اندازی PowerShell داخلی ناموفق بود.", "error");
+    if (result.technical) terminalLine(result.technical, "error");
     setStatus("PTY Error", "error");
     return;
   }
   state.liveReady = true;
   if (result.cwd) $("cwdLabel").textContent = result.cwd;
+  await fitTerminal();
   if (state.poller) clearInterval(state.poller);
-  state.poller = setInterval(pollLive, 120);
+  state.poller = setInterval(pollLive, 60);
 }
 
 async function pollLive() {
@@ -103,7 +147,7 @@ async function pollLive() {
   if (!api || !state.liveReady) return;
   try {
     const result = await api.live_read();
-    if (result.ok && result.output) appendRaw(result.output);
+    if (result.ok && result.output) terminalWrite(result.output);
   } catch (_) {}
 }
 
@@ -159,7 +203,7 @@ async function saveSettings() {
   if (result.ok) {
     state.settings = result.settings;
     hydrateSettings(result.settings);
-    writeOutput("تنظیمات ذخیره شد.", "ok");
+    terminalLine("تنظیمات ذخیره شد.", "ok");
     setStatus("Saved", "ok");
     hideModal("settingsModal");
   }
@@ -170,7 +214,7 @@ async function testLlm() {
   if (!api) return;
   await saveSettings();
   const result = await api.test_llm();
-  writeOutput(result.message_fa, result.ok ? "ok" : "error");
+  terminalLine(result.message_fa, result.ok ? "ok" : "error");
   setStatus(result.ok ? "LLM OK" : "LLM Error", result.ok ? "ok" : "error");
 }
 
@@ -179,10 +223,10 @@ async function makeKeypair() {
   if (!api) return;
   await saveSettings();
   const result = await api.make_keypair();
-  writeOutput(result.message_fa || JSON.stringify(result), result.ok ? "ok" : "error");
+  terminalLine(result.message_fa || JSON.stringify(result), result.ok ? "ok" : "error");
   if (result.key_path) {
     $("serverKeyPath").value = result.key_path;
-    writeOutput(`Key: ${result.key_path}`, "ok");
+    terminalLine(`Key: ${result.key_path}`, "ok");
   }
 }
 
@@ -194,7 +238,7 @@ async function refreshSync() {
   $("syncOutput").textContent = "در حال بررسی هماهنگی...";
   const result = await api.sync_health();
   $("syncOutput").textContent = JSON.stringify(result, null, 2);
-  writeOutput("هماهنگی Local/GitHub/Server بررسی شد.", result.ok ? "ok" : "error");
+  terminalLine("هماهنگی Local/GitHub/Server بررسی شد.", result.ok ? "ok" : "error");
 }
 
 async function parseRequest() {
@@ -202,46 +246,46 @@ async function parseRequest() {
   if (!api) return;
   const text = $("requestInput").value.trim();
   if (!text) return;
-  writeOutput(text, "cmd");
+  terminalLine(text, "cmd");
   setStatus("Parsing", "warn");
   setPlan(null);
   const result = await api.parse_request(text, $("projectPath").value.trim());
   if (!result.ok) {
-    writeOutput(result.message_fa || "تشخیص ناموفق بود.", "error");
+    terminalLine(result.message_fa || "تشخیص ناموفق بود.", "error");
     setStatus("Parse Error", "error");
     return;
   }
   setPlan(result.plan, result.command_preview, result.intent);
-  writeOutput(`تشخیص: ${result.plan.command_id} (${result.intent.source})`, "ok");
+  terminalLine(`تشخیص: ${result.plan.command_id} (${result.intent.source})`, "ok");
   setStatus("Parsed", "ok");
 }
 
-async function sendToLive() {
+async function sendToLive(text) {
   const api = pyApi();
   if (!api || !state.liveReady) return;
-  const text = $("requestInput").value;
-  if (!text.trim()) return;
-  await api.live_send(text + "\r");
-  $("requestInput").value = "";
+  await api.live_send(text);
 }
 
 async function runCurrent(confirmed = false) {
-  const api = pyApi();
-  if (!api || !state.currentPlan) return;
+  if (!state.currentPlan) return;
   if (state.currentPlan.requires_confirmation && !confirmed) {
     showConfirm();
     return;
   }
   const commandLine = state.currentPlan.argv.join(" ");
-  await api.live_send(commandLine + "\r");
-  writeOutput(`ارسال به PowerShell داخلی: ${commandLine}`, "ok");
+  await sendToLive(commandLine + "\r");
+  terminalLine(`ارسال به ترمینال: ${commandLine}`, "ok");
   $("requestInput").value = "";
   setStatus("Sent", "ok");
 }
 
-function showConfirm() { $("confirmText").textContent = state.currentPlan.explanation_fa || "این عملیات نیازمند تأیید است."; $("confirmCommand").textContent = state.currentPlan.argv.join(" "); showModal("confirmModal"); }
+function showConfirm() {
+  $("confirmText").textContent = state.currentPlan.explanation_fa || "این عملیات نیازمند تأیید است.";
+  $("confirmCommand").textContent = state.currentPlan.argv.join(" ");
+  showModal("confirmModal");
+}
 function showModal(id) { $(id).classList.remove("hidden"); }
-function hideModal(id) { $(id).classList.add("hidden"); }
+function hideModal(id) { $(id).classList.add("hidden"); if (state.term) state.term.focus(); }
 
 function wireEvents() {
   $("parseBtn").addEventListener("click", parseRequest);
@@ -261,11 +305,16 @@ function wireEvents() {
   $("requestInput").addEventListener("keydown", async (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
-      if (event.ctrlKey) await parseRequest();
-      else await sendToLive();
+      await parseRequest();
     }
   });
 }
 
-window.addEventListener("DOMContentLoaded", () => { wireEvents(); setStatus("Waiting API", "warn"); writeOutput("در حال آماده‌سازی رابط برنامه..."); if (pyApi()) boot(); });
+window.addEventListener("DOMContentLoaded", () => {
+  wireEvents();
+  initTerminal();
+  setStatus("Waiting API", "warn");
+  terminalLine("در حال آماده‌سازی ترمینال واقعی...");
+  if (pyApi()) boot();
+});
 window.addEventListener("pywebviewready", boot);
