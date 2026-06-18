@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import queue
 import shutil
 import threading
@@ -35,12 +36,7 @@ class EmbeddedSession:
             self.process = PtyProcess.spawn(shell_command, cwd=str(path))
             self.reader = threading.Thread(target=self._read_loop, daemon=True)
             self.reader.start()
-            return {
-                "ok": True,
-                "message_fa": "ترمینال داخلی آماده است.",
-                "cwd": str(path),
-                "shell": shell_command,
-            }
+            return {"ok": True, "message_fa": "ترمینال داخلی آماده است.", "cwd": str(path), "shell": shell_command.split()[0]}
 
     def write(self, text: str) -> dict[str, object]:
         with self.lock:
@@ -89,14 +85,14 @@ class EmbeddedSession:
 
     @staticmethod
     def _build_shell_command() -> str:
-        startup = (
-            "chcp 65001 > $null; "
-            "[Console]::InputEncoding = [System.Text.UTF8Encoding]::new(); "
-            "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); "
-            "$OutputEncoding = [Console]::OutputEncoding; "
-            "$PSStyle.OutputRendering = 'Ansi'; "
-        )
-        startup_escaped = startup.replace('"', '`"')
+        startup = """
+try { chcp.com 65001 | Out-Null } catch {}
+try { [Console]::InputEncoding = [System.Text.UTF8Encoding]::new() } catch {}
+try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new() } catch {}
+try { $OutputEncoding = [Console]::OutputEncoding } catch {}
+try { $PSStyle.OutputRendering = 'Ansi' } catch {}
+""".strip()
+        encoded = base64.b64encode(startup.encode("utf-16le")).decode("ascii")
         if shutil.which("pwsh.exe"):
-            return f"pwsh.exe -NoLogo -NoProfile -NoExit -Command \"{startup_escaped}\""
-        return f"powershell.exe -NoLogo -NoProfile -NoExit -Command \"{startup_escaped}\""
+            return f"pwsh.exe -NoLogo -NoProfile -NoExit -EncodedCommand {encoded}"
+        return f"powershell.exe -NoLogo -NoProfile -NoExit -EncodedCommand {encoded}"
