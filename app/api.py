@@ -48,6 +48,9 @@ class AppAPI:
     def live_send(self, text: str) -> dict[str, Any]:
         return self.live.write(text)
 
+    def live_resize(self, cols: int, rows: int) -> dict[str, Any]:
+        return self.live.resize(cols, rows)
+
     def live_read(self) -> dict[str, Any]:
         return self.live.read()
 
