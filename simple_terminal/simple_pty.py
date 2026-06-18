@@ -83,7 +83,7 @@ class SimplePtySession:
 
             diagnostics.append(f"[OK] Selected shell kind: {self.shell_kind}")
             diagnostics.append(f"[OK] Selected shell command: {self.active_command}")
-            diagnostics.append("[INFO] No startup script is injected from Python. Smart cd is handled in the frontend before commands are sent.")
+            diagnostics.append("[INFO] No startup script or cd override is injected. Folder changes are sent only from the folder button.")
             self.output.put(self._format_diagnostics(diagnostics) + "\r\n")
 
             self.reader = threading.Thread(target=self._read_loop, daemon=True)
