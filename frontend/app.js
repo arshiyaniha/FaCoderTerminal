@@ -12,17 +12,26 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 
+async function uiLog(level, area, message, data = {}) {
+  try {
+    const api = pyApi();
+    if (api && api.temp_log) await api.temp_log(level, area, String(message || ""), data || {});
+  } catch (_) {}
+}
+
 function terminalWrite(text) {
   if (state.term) state.term.write(String(text ?? ""));
 }
 
 function terminalLine(text, mode = "info") {
   const prefix = mode === "error" ? "[ERROR]" : mode === "ok" ? "[OK]" : mode === "cmd" ? "[FaCoder]" : "[INFO]";
-  terminalWrite(`\r\n${prefix} ${text}\r\n`);
+  if (state.term) terminalWrite(`\r\n${prefix} ${text}\r\n`);
+  else console.log(`${prefix} ${text}`);
 }
 
 function setStatus(text, type = "") {
   const pill = $("statusPill");
+  if (!pill) return;
   pill.textContent = text;
   pill.className = `status-pill ${type}`.trim();
 }
@@ -49,7 +58,18 @@ function pyApi() {
 }
 
 function initTerminal() {
-  if (state.term || typeof Terminal === "undefined") return;
+  if (state.term) return;
+  if (typeof Terminal === "undefined") {
+    setStatus("XTerm Missing", "error");
+    uiLog("error", "ui.xterm", "Terminal global is undefined. xterm.js probably failed to load.", {
+      scripts: Array.from(document.scripts).map((script) => script.src || "inline"),
+      online: navigator.onLine,
+    });
+    const fallback = $("terminal");
+    if (fallback) fallback.textContent = "xterm.js لود نشد. احتمالاً CDN در دسترس نیست. لاگ را بررسی کنید.";
+    throw new Error("Terminal global is undefined");
+  }
+
   state.term = new Terminal({
     cursorBlink: true,
     convertEol: false,
@@ -74,6 +94,8 @@ function initTerminal() {
   if (window.FitAddon) {
     state.fitAddon = new FitAddon.FitAddon();
     state.term.loadAddon(state.fitAddon);
+  } else {
+    uiLog("warn", "ui.xterm", "FitAddon missing. Terminal will work without auto-fit.");
   }
   state.term.open($("terminal"));
   fitTerminal();
@@ -82,6 +104,7 @@ function initTerminal() {
     if (api && state.liveReady) await api.live_send(data);
   });
   window.addEventListener("resize", fitTerminal);
+  uiLog("info", "ui.xterm", "xterm initialized");
 }
 
 async function fitTerminal() {
@@ -90,7 +113,9 @@ async function fitTerminal() {
     if (state.fitAddon) state.fitAddon.fit();
     const api = pyApi();
     if (api && state.term.cols && state.term.rows) await api.live_resize(state.term.cols, state.term.rows);
-  } catch (_) {}
+  } catch (error) {
+    uiLog("error", "ui.fit", error?.message || String(error), { stack: error?.stack });
+  }
 }
 
 async function boot() {
@@ -99,11 +124,13 @@ async function boot() {
     setStatus("Waiting API", "warn");
     return;
   }
-  initTerminal();
-  state.apiReady = true;
-  setStatus("Loading", "warn");
+  await uiLog("info", "ui.boot", "boot started");
   try {
+    initTerminal();
+    state.apiReady = true;
+    setStatus("Loading", "warn");
     const data = await api.get_bootstrap();
+    await uiLog("info", "ui.boot", "bootstrap received", { ok: data.ok, log_path: data.log_path });
     state.settings = data.settings;
     state.commands = data.commands || [];
     hydrateSettings(data.settings);
@@ -121,6 +148,7 @@ async function boot() {
     setStatus("Ready", "ok");
     state.term.focus();
   } catch (error) {
+    await uiLog("error", "ui.boot", error?.message || String(error), { stack: error?.stack });
     terminalLine(`خطای شروع برنامه: ${error}`, "error");
     setStatus("Boot Error", "error");
   }
@@ -128,7 +156,9 @@ async function boot() {
 
 async function startLive() {
   const api = pyApi();
+  await uiLog("info", "ui.live", "starting live session", { projectPath: $("projectPath")?.value?.trim() || "" });
   const result = await api.live_start($("projectPath").value.trim());
+  await uiLog(result.ok ? "info" : "error", "ui.live", "live_start result", result);
   if (!result.ok) {
     terminalLine(result.message_fa || "راه‌اندازی PowerShell داخلی ناموفق بود.", "error");
     if (result.technical) terminalLine(result.technical, "error");
@@ -148,7 +178,9 @@ async function pollLive() {
   try {
     const result = await api.live_read();
     if (result.ok && result.output) terminalWrite(result.output);
-  } catch (_) {}
+  } catch (error) {
+    uiLog("error", "ui.live_read", error?.message || String(error), { stack: error?.stack });
+  }
 }
 
 function hydrateSettings(settings) {
@@ -206,6 +238,8 @@ async function saveSettings() {
     terminalLine("تنظیمات ذخیره شد.", "ok");
     setStatus("Saved", "ok");
     hideModal("settingsModal");
+  } else {
+    terminalLine(result.message_fa || "ذخیره تنظیمات ناموفق بود.", "error");
   }
 }
 
@@ -310,11 +344,23 @@ function wireEvents() {
   });
 }
 
+window.addEventListener("error", (event) => {
+  uiLog("error", "ui.window_error", event.message, { filename: event.filename, lineno: event.lineno, colno: event.colno, stack: event.error?.stack });
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  uiLog("error", "ui.unhandled_promise", event.reason?.message || String(event.reason), { stack: event.reason?.stack });
+});
+
 window.addEventListener("DOMContentLoaded", () => {
   wireEvents();
-  initTerminal();
   setStatus("Waiting API", "warn");
-  terminalLine("در حال آماده‌سازی ترمینال واقعی...");
+  try {
+    initTerminal();
+    terminalLine("در حال آماده‌سازی ترمینال واقعی...");
+  } catch (error) {
+    setStatus("Boot Error", "error");
+  }
   if (pyApi()) boot();
 });
 window.addEventListener("pywebviewready", boot);
