@@ -19,14 +19,15 @@ async function uiLog(level, area, message, data = {}) {
   } catch (_) {}
 }
 
-function terminalWrite(text) {
-  if (state.term) state.term.write(String(text ?? ""));
+function setUiMessage(text, mode = "info") {
+  const box = $("planBox");
+  if (!box) return;
+  const prefix = mode === "error" ? "خطا: " : mode === "ok" ? "انجام شد: " : mode === "cmd" ? "FaCoder: " : "";
+  box.textContent = `${prefix}${text}`;
 }
 
-function terminalLine(text, mode = "info") {
-  const prefix = mode === "error" ? "[ERROR]" : mode === "ok" ? "[OK]" : mode === "cmd" ? "[FaCoder]" : "[INFO]";
-  if (state.term) terminalWrite(`\r\n${prefix} ${text}\r\n`);
-  else console.log(`${prefix} ${text}`);
+function terminalWrite(text) {
+  if (state.term) state.term.write(String(text ?? ""));
 }
 
 function setStatus(text, type = "") {
@@ -40,7 +41,7 @@ function setPlan(plan, preview, intent) {
   state.currentPlan = plan;
   state.currentIntent = intent;
   if (!plan) {
-    $("planBox").textContent = "Ctrl+Enter برای تشخیص فارسی؛ Enter داخل ترمینال برای اجرای مستقیم.";
+    setUiMessage("Ctrl+Enter برای تشخیص فارسی؛ تایپ مستقیم داخل ترمینال برای اجرای PowerShell.");
     $("runBtn").disabled = true;
     return;
   }
@@ -91,12 +92,14 @@ function initTerminal() {
     },
     scrollback: 5000,
   });
+
   if (window.FitAddon) {
     state.fitAddon = new FitAddon.FitAddon();
     state.term.loadAddon(state.fitAddon);
   } else {
     uiLog("warn", "ui.xterm", "FitAddon missing. Terminal will work without auto-fit.");
   }
+
   state.term.open($("terminal"));
   fitTerminal();
   state.term.onData(async (data) => {
@@ -136,20 +139,18 @@ async function boot() {
     hydrateSettings(data.settings);
     renderCommands(state.commands);
     if (!data.ok) {
-      terminalLine(data.catalog_error || "خطای catalog", "error");
+      setUiMessage(data.catalog_error || "خطای catalog", "error");
       setStatus("Catalog Error", "error");
       return;
     }
     await startLive();
     setPlan(null);
-    terminalLine("FaCoderTerminal آماده است.", "ok");
-    terminalLine("این پنجره اکنون xterm.js + PowerShell زنده است.");
-    terminalLine("در خود ترمینال تایپ کن؛ نوار پایین فقط برای دستور فارسی FaCoder است.");
+    setUiMessage("ترمینال زنده آماده است. پیام‌های برنامه دیگر داخل ترمینال نوشته نمی‌شوند.", "ok");
     setStatus("Ready", "ok");
     state.term.focus();
   } catch (error) {
     await uiLog("error", "ui.boot", error?.message || String(error), { stack: error?.stack });
-    terminalLine(`خطای شروع برنامه: ${error}`, "error");
+    setUiMessage(`خطای شروع برنامه: ${error}`, "error");
     setStatus("Boot Error", "error");
   }
 }
@@ -160,8 +161,7 @@ async function startLive() {
   const result = await api.live_start($("projectPath").value.trim());
   await uiLog(result.ok ? "info" : "error", "ui.live", "live_start result", result);
   if (!result.ok) {
-    terminalLine(result.message_fa || "راه‌اندازی PowerShell داخلی ناموفق بود.", "error");
-    if (result.technical) terminalLine(result.technical, "error");
+    setUiMessage(result.message_fa || "راه‌اندازی PowerShell داخلی ناموفق بود.", "error");
     setStatus("PTY Error", "error");
     return;
   }
@@ -235,11 +235,11 @@ async function saveSettings() {
   if (result.ok) {
     state.settings = result.settings;
     hydrateSettings(result.settings);
-    terminalLine("تنظیمات ذخیره شد.", "ok");
+    setUiMessage("تنظیمات ذخیره شد.", "ok");
     setStatus("Saved", "ok");
     hideModal("settingsModal");
   } else {
-    terminalLine(result.message_fa || "ذخیره تنظیمات ناموفق بود.", "error");
+    setUiMessage(result.message_fa || "ذخیره تنظیمات ناموفق بود.", "error");
   }
 }
 
@@ -248,7 +248,7 @@ async function testLlm() {
   if (!api) return;
   await saveSettings();
   const result = await api.test_llm();
-  terminalLine(result.message_fa, result.ok ? "ok" : "error");
+  setUiMessage(result.message_fa, result.ok ? "ok" : "error");
   setStatus(result.ok ? "LLM OK" : "LLM Error", result.ok ? "ok" : "error");
 }
 
@@ -257,11 +257,8 @@ async function makeKeypair() {
   if (!api) return;
   await saveSettings();
   const result = await api.make_keypair();
-  terminalLine(result.message_fa || JSON.stringify(result), result.ok ? "ok" : "error");
-  if (result.key_path) {
-    $("serverKeyPath").value = result.key_path;
-    terminalLine(`Key: ${result.key_path}`, "ok");
-  }
+  setUiMessage(result.message_fa || JSON.stringify(result), result.ok ? "ok" : "error");
+  if (result.key_path) $("serverKeyPath").value = result.key_path;
 }
 
 async function refreshSync() {
@@ -272,7 +269,7 @@ async function refreshSync() {
   $("syncOutput").textContent = "در حال بررسی هماهنگی...";
   const result = await api.sync_health();
   $("syncOutput").textContent = JSON.stringify(result, null, 2);
-  terminalLine("هماهنگی Local/GitHub/Server بررسی شد.", result.ok ? "ok" : "error");
+  setUiMessage("هماهنگی Local/GitHub/Server بررسی شد.", result.ok ? "ok" : "error");
 }
 
 async function parseRequest() {
@@ -280,17 +277,16 @@ async function parseRequest() {
   if (!api) return;
   const text = $("requestInput").value.trim();
   if (!text) return;
-  terminalLine(text, "cmd");
+  setUiMessage(text, "cmd");
   setStatus("Parsing", "warn");
   setPlan(null);
   const result = await api.parse_request(text, $("projectPath").value.trim());
   if (!result.ok) {
-    terminalLine(result.message_fa || "تشخیص ناموفق بود.", "error");
+    setUiMessage(result.message_fa || "تشخیص ناموفق بود.", "error");
     setStatus("Parse Error", "error");
     return;
   }
   setPlan(result.plan, result.command_preview, result.intent);
-  terminalLine(`تشخیص: ${result.plan.command_id} (${result.intent.source})`, "ok");
   setStatus("Parsed", "ok");
 }
 
@@ -308,9 +304,10 @@ async function runCurrent(confirmed = false) {
   }
   const commandLine = state.currentPlan.argv.join(" ");
   await sendToLive(commandLine + "\r");
-  terminalLine(`ارسال به ترمینال: ${commandLine}`, "ok");
+  setUiMessage(`به ترمینال ارسال شد: ${commandLine}`, "ok");
   $("requestInput").value = "";
   setStatus("Sent", "ok");
+  state.term.focus();
 }
 
 function showConfirm() {
@@ -347,17 +344,15 @@ function wireEvents() {
 window.addEventListener("error", (event) => {
   uiLog("error", "ui.window_error", event.message, { filename: event.filename, lineno: event.lineno, colno: event.colno, stack: event.error?.stack });
 });
-
 window.addEventListener("unhandledrejection", (event) => {
   uiLog("error", "ui.unhandled_promise", event.reason?.message || String(event.reason), { stack: event.reason?.stack });
 });
-
 window.addEventListener("DOMContentLoaded", () => {
   wireEvents();
   setStatus("Waiting API", "warn");
   try {
     initTerminal();
-    terminalLine("در حال آماده‌سازی ترمینال واقعی...");
+    setUiMessage("در حال آماده‌سازی ترمینال واقعی...");
   } catch (error) {
     setStatus("Boot Error", "error");
   }
