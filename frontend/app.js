@@ -310,6 +310,69 @@ async function runCurrent(confirmed = false) {
   state.term.focus();
 }
 
+function getTerminalLines() {
+  if (!state.term?.buffer?.active) return [];
+  const buffer = state.term.buffer.active;
+  const lines = [];
+  for (let i = 0; i < buffer.length; i += 1) {
+    const line = buffer.getLine(i);
+    if (!line) continue;
+    lines.push(line.translateToString(true));
+  }
+  return lines;
+}
+
+function getTerminalText(scope) {
+  const lines = getTerminalLines();
+  if (scope === "last50") return lines.slice(-50).join("\n").trimEnd();
+  if (scope === "last") {
+    for (let i = lines.length - 1; i >= 0; i -= 1) {
+      const value = lines[i].trimEnd();
+      if (value.trim()) return value;
+    }
+    return "";
+  }
+  return lines.join("\n").trimEnd();
+}
+
+async function copyText(text) {
+  const value = String(text || "");
+  if (!value.trim()) {
+    setUiMessage("چیزی برای کپی وجود ندارد.", "error");
+    return false;
+  }
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+    } else {
+      const textarea = document.createElement("textarea");
+      textarea.value = value;
+      textarea.setAttribute("readonly", "readonly");
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+    }
+    setUiMessage("خروجی ترمینال کپی شد.", "ok");
+    setStatus("Copied", "ok");
+    return true;
+  } catch (error) {
+    await uiLog("error", "ui.copy", error?.message || String(error), { stack: error?.stack });
+    setUiMessage(`کپی ناموفق بود: ${error}`, "error");
+    setStatus("Copy Error", "error");
+    return false;
+  } finally {
+    if (state.term) state.term.focus();
+  }
+}
+
+async function copyTerminal(scope) {
+  const text = getTerminalText(scope);
+  await copyText(text);
+}
+
 function showConfirm() {
   $("confirmText").textContent = state.currentPlan.explanation_fa || "این عملیات نیازمند تأیید است.";
   $("confirmCommand").textContent = state.currentPlan.argv.join(" ");
@@ -326,6 +389,9 @@ function wireEvents() {
   $("makeKeyBtn").addEventListener("click", makeKeypair);
   $("refreshSyncBtn").addEventListener("click", refreshSync);
   $("syncBtn").addEventListener("click", refreshSync);
+  $("copyAllBtn").addEventListener("click", () => copyTerminal("all"));
+  $("copyLast50Btn").addEventListener("click", () => copyTerminal("last50"));
+  $("copyLastMsgBtn").addEventListener("click", () => copyTerminal("last"));
   $("settingsBtn").addEventListener("click", () => showModal("settingsModal"));
   $("commandsBtn").addEventListener("click", () => showModal("commandsModal"));
   $("closeSettings").addEventListener("click", () => hideModal("settingsModal"));
