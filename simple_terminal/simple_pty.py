@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import base64
 import os
 import platform
 import queue
 import subprocess
 import sys
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -19,6 +19,7 @@ class SimplePtySession:
         self.reader: threading.Thread | None = None
         self.lock = threading.Lock()
         self.active_command = ""
+        self.shell_kind = ""
 
     def start(self, cwd: str) -> dict[str, Any]:
         diagnostics = self._collect_diagnostics(cwd)
@@ -46,20 +47,26 @@ class SimplePtySession:
             diagnostics.append(f"[INFO] Final cwd: {path}")
 
             attempted: list[dict[str, str]] = []
-            commands = self._candidate_shell_commands()
+            candidates = self._candidate_shell_commands()
             diagnostics.append("[INFO] Candidate shells:")
-            for index, candidate in enumerate(commands, start=1):
-                diagnostics.append(f"  {index}. {candidate}")
+            for index, candidate in enumerate(candidates, start=1):
+                diagnostics.append(f"  {index}. {candidate['kind']}: {candidate['command']}")
 
-            for command in commands:
+            for candidate in candidates:
+                command = candidate["command"]
                 diagnostics.append(f"[TRY] PTY spawn: {command}")
                 try:
                     self.process = PtyProcess.spawn(command, cwd=str(path))
                     self.active_command = command
+                    self.shell_kind = candidate["kind"]
+                    time.sleep(0.35)
                     alive = self._safe_isalive()
                     attempted.append({"command": command, "result": f"spawn returned; isalive={alive}"})
-                    diagnostics.append(f"[OK] PTY spawn returned. isalive={alive}")
-                    break
+                    diagnostics.append(f"[INFO] PTY spawn returned. isalive_after_350ms={alive}")
+                    if alive == "True":
+                        break
+                    diagnostics.append("[WARN] Shell died immediately after spawn; trying next candidate.")
+                    self.process = None
                 except Exception as exc:
                     attempted.append({"command": command, "result": repr(exc)})
                     diagnostics.append(f"[FAIL] PTY spawn exception: {exc!r}")
@@ -74,10 +81,13 @@ class SimplePtySession:
                     "diagnostic": self._format_diagnostics(diagnostics),
                 }
 
-            # Print diagnostics inside the terminal before shell output starts.
+            diagnostics.append(f"[OK] Selected shell kind: {self.shell_kind}")
+            diagnostics.append(f"[OK] Selected shell command: {self.active_command}")
             self.output.put(self._format_diagnostics(diagnostics) + "\r\n")
+
             self.reader = threading.Thread(target=self._read_loop, daemon=True)
             self.reader.start()
+            self._inject_startup_script()
             return {
                 "ok": True,
                 "cwd": str(path),
@@ -143,9 +153,22 @@ class SimplePtySession:
                     f"  exception_repr: {exc!r}\r\n"
                     f"  process_isalive: {alive}\r\n"
                     f"  active_shell: {self.active_command}\r\n"
-                    "[DIAG] If Windows also shows Application Error 0xc0000142, the shell executable crashed after PTY spawn.\r\n"
+                    "[DIAG] If this happens after a shell prompt appeared, the child shell exited or crashed.\r\n"
                 )
                 break
+
+    def _inject_startup_script(self) -> None:
+        if self.process is None or not self.process.isalive():
+            self.output.put("\r\n[DIAG] Startup script not injected because shell is not alive.\r\n")
+            return
+        try:
+            if self.shell_kind == "powershell":
+                self.output.put("\r\n[INFO] Injecting PowerShell UTF-8 and smart cd startup script...\r\n")
+                self.process.write(self._powershell_startup_script() + "\r")
+            elif self.shell_kind == "cmd":
+                self.output.put("\r\n[INFO] CMD fallback is active. PowerShell-specific smart cd is not available.\r\n")
+        except Exception as exc:
+            self.output.put(f"\r\n[DIAG] Startup script injection failed: {exc!r}\r\n")
 
     def _safe_isalive(self) -> str:
         try:
@@ -231,70 +254,33 @@ class SimplePtySession:
     @staticmethod
     def _powershell_startup_script() -> str:
         return r"""
-try { chcp.com 65001 | Out-Null } catch {}
+chcp.com 65001 | Out-Null
 try { [Console]::InputEncoding = [System.Text.UTF8Encoding]::new() } catch {}
 try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new() } catch {}
 try { $OutputEncoding = [Console]::OutputEncoding } catch {}
-try { $PSStyle.OutputRendering = 'Ansi' } catch {}
-
-foreach ($name in @('cd', 'chdir', 'sl')) {
-    try { Remove-Item "Alias:$name" -Force -ErrorAction SilentlyContinue } catch {}
-}
-
-function global:cd {
-    [CmdletBinding()]
-    param(
-        [Parameter(ValueFromRemainingArguments = $true)]
-        [string[]] $PathParts
-    )
-
-    if (-not $PathParts -or $PathParts.Count -eq 0) {
-        Microsoft.PowerShell.Management\Set-Location -Path $HOME
-        return
-    }
-
-    $target = ($PathParts -join ' ').Trim()
-    $target = $target.Trim('"').Trim("'")
-
-    if ($target -match '^file:///') {
-        try { $target = ([System.Uri] $target).LocalPath } catch {}
-    }
-
-    $target = [Environment]::ExpandEnvironmentVariables($target)
-    Microsoft.PowerShell.Management\Set-Location -LiteralPath $target
-}
-
-function global:chdir {
-    [CmdletBinding()]
-    param([Parameter(ValueFromRemainingArguments = $true)][string[]] $PathParts)
-    cd @PathParts
-}
-
-function global:sl {
-    [CmdletBinding()]
-    param([Parameter(ValueFromRemainingArguments = $true)][string[]] $PathParts)
-    cd @PathParts
-}
+foreach ($name in @('cd','chdir','sl')) { try { Remove-Item "Alias:$name" -Force -ErrorAction SilentlyContinue } catch {} }
+function global:cd { param([Parameter(ValueFromRemainingArguments=$true)][string[]]$PathParts) if(-not $PathParts){ Microsoft.PowerShell.Management\Set-Location -Path $HOME; return }; $target=($PathParts -join ' ').Trim().Trim('"').Trim("'"); if($target -match '^file:///'){ try{ $target=([System.Uri]$target).LocalPath }catch{} }; $target=[Environment]::ExpandEnvironmentVariables($target); Microsoft.PowerShell.Management\Set-Location -LiteralPath $target }
+function global:chdir { param([Parameter(ValueFromRemainingArguments=$true)][string[]]$PathParts) cd @PathParts }
+function global:sl { param([Parameter(ValueFromRemainingArguments=$true)][string[]]$PathParts) cd @PathParts }
+Write-Host '[OK] UTF-8 and smart cd are active.'
 """.strip()
 
     @classmethod
-    def _candidate_shell_commands(cls) -> list[str]:
-        startup = cls._powershell_startup_script()
-        encoded = base64.b64encode(startup.encode("utf-16le")).decode("ascii")
+    def _candidate_shell_commands(cls) -> list[dict[str, str]]:
         system_root = Path(os.environ.get("SystemRoot", r"C:\Windows"))
         powershell = system_root / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
         cmd = system_root / "System32" / "cmd.exe"
 
-        commands: list[str] = []
+        candidates: list[dict[str, str]] = []
         if os.environ.get("SIMPLE_TERMINAL_USE_PWSH") == "1":
-            commands.append(f'pwsh.exe -NoLogo -NoProfile -NoExit -EncodedCommand {encoded}')
+            candidates.append({"kind": "powershell", "command": "pwsh.exe -NoLogo -NoProfile -NoExit"})
 
         if powershell.exists():
-            commands.append(f'"{powershell}" -NoLogo -NoProfile -NoExit -ExecutionPolicy Bypass -EncodedCommand {encoded}')
+            candidates.append({"kind": "powershell", "command": f"{powershell} -NoLogo -NoProfile -NoExit -ExecutionPolicy Bypass"})
 
-        commands.append(f'powershell.exe -NoLogo -NoProfile -NoExit -ExecutionPolicy Bypass -EncodedCommand {encoded}')
+        candidates.append({"kind": "powershell", "command": "powershell.exe -NoLogo -NoProfile -NoExit -ExecutionPolicy Bypass"})
 
         if cmd.exists():
-            commands.append(f'"{cmd}" /K chcp 65001')
-        commands.append("cmd.exe /K chcp 65001")
-        return commands
+            candidates.append({"kind": "cmd", "command": f"{cmd} /K chcp 65001"})
+        candidates.append({"kind": "cmd", "command": "cmd.exe /K chcp 65001"})
+        return candidates
