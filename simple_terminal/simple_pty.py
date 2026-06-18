@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import base64
+import os
 import queue
-import shutil
 import threading
 from pathlib import Path
 from typing import Any
@@ -34,7 +34,11 @@ class SimplePtySession:
                 path = Path.cwd()
 
             command = self._build_shell_command()
-            self.process = PtyProcess.spawn(command, cwd=str(path))
+            try:
+                self.process = PtyProcess.spawn(command, cwd=str(path))
+            except Exception as exc:
+                return {"ok": False, "message": "PowerShell start failed.", "technical": str(exc), "command": command}
+
             self.reader = threading.Thread(target=self._read_loop, daemon=True)
             self.reader.start()
             return {"ok": True, "cwd": str(path), "shell": command.split()[0]}
@@ -137,6 +141,9 @@ function global:sl {
 }
 """.strip()
         encoded = base64.b64encode(startup.encode("utf-16le")).decode("ascii")
-        if shutil.which("pwsh.exe"):
+
+        # Windows PowerShell 5.1 is present on Windows and is more stable inside the packaged exe.
+        # PowerShell 7 can still be used explicitly with: set SIMPLE_TERMINAL_USE_PWSH=1
+        if os.environ.get("SIMPLE_TERMINAL_USE_PWSH") == "1":
             return f"pwsh.exe -NoLogo -NoProfile -NoExit -EncodedCommand {encoded}"
         return f"powershell.exe -NoLogo -NoProfile -NoExit -EncodedCommand {encoded}"
